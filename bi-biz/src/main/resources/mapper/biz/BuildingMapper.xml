@@ -371,4 +371,66 @@
             </foreach>
         </if>
     </select>
+
+    <select id="countActiveBuildings" resultType="int">
+        select count(*)
+        from bi_building
+        where del_flag = '0'
+    </select>
+
+    <!-- GPS 存在桥梁卡片属性里。等级取该桥最新一次评定的 system_level，不使用病害扣分字段。 -->
+    <select id="selectBuildingMapPoints" resultType="edu.whut.cs.bi.biz.domain.vo.BuildingMapPoint">
+        select gps.id,
+               gps.name,
+               gps.is_leaf as isLeaf,
+               gps.longitude,
+               gps.latitude,
+               ev.system_level as systemLevel,
+               ev.system_score as systemScore,
+               ev.superstructure_level as superstructureLevel,
+               ev.substructure_level as substructureLevel,
+               ev.deck_system_level as deckSystemLevel
+        from (
+                 select b.id,
+                        b.name,
+                        b.is_leaf,
+                        cast(max(lng.value) as decimal(12, 6)) as longitude,
+                        cast(max(lat.value) as decimal(12, 6)) as latitude
+                 from bi_building b
+                          inner join bi_property lng
+                                     on lng.name = 'GPS经度'
+                                         and substring_index(trim(both ',' from lng.ancestors), ',', 1) = b.root_property_id
+                          inner join bi_property lat
+                                     on lat.name = 'GPS纬度'
+                                         and substring_index(trim(both ',' from lat.ancestors), ',', 1) = b.root_property_id
+                 where b.del_flag = '0'
+                   and b.root_property_id is not null
+                   and lng.value regexp '^[0-9]+(\\.[0-9]+)?$'
+                   and lat.value regexp '^[0-9]+(\\.[0-9]+)?$'
+                   and cast(lng.value as decimal(12, 6)) between 73 and 136
+                   and cast(lat.value as decimal(12, 6)) between 3 and 54
+                 group by b.id, b.name, b.is_leaf
+             ) gps
+                 left join (
+            select building_id,
+                   system_level,
+                   system_score,
+                   superstructure_level,
+                   substructure_level,
+                   deck_system_level
+            from (
+                     select t.building_id,
+                            e.system_level,
+                            e.system_score,
+                            e.superstructure_level,
+                            e.substructure_level,
+                            e.deck_system_level,
+                            row_number() over (partition by t.building_id order by e.update_time desc, e.id desc) as rn
+                     from bi_evaluation e
+                              inner join bi_task t on t.id = e.task_id and t.del_flag = '0'
+                 ) ranked
+            where rn = 1
+        ) ev on ev.building_id = gps.id
+        order by gps.name
+    </select>
 </mapper>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <th:block th:include="include :: header('桥梁地图')"/>
+    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/leaflet.css}"/>
+    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/MarkerCluster.css}"/>
+    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/MarkerCluster.Default.css}"/>
+    <style>
+        html, body { height: 100%; margin: 0; overflow: hidden; background: #e7eef5; }
+        .map-shell { display: flex; height: 100vh; min-height: 560px; }
+        .map-side {
+            width: 320px; flex: none; display: flex; flex-direction: column;
+            background: #10283f; color: #e8eef5;
+        }
+        .map-side header { padding: 18px 18px 12px; }
+        .map-side h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: 0.04em; }
+        .map-count { margin-top: 8px; color: #9fb3c8; font-size: 13px; line-height: 1.6; }
+        .map-count b { color: #fff; font-size: 22px; font-weight: 650; margin-right: 4px; }
+        .map-tools { padding: 0 18px 12px; }
+        .map-tools input, .map-tools select {
+            width: 100%; height: 36px; border: 0; border-radius: 6px;
+            padding: 0 12px; margin-bottom: 8px; background: #1c3b58; color: #fff;
+        }
+        .map-tools input::placeholder { color: #8aa0b5; }
+        .bridge-list { flex: 1; overflow: auto; padding: 0 8px 12px; }
+        .bridge-item {
+            display: block; width: 100%; text-align: left; border: 0; border-radius: 6px;
+            background: transparent; color: #d7e3ee; padding: 8px 10px; cursor: pointer;
+        }
+        .bridge-item:hover, .bridge-item.active { background: #1c4d78; color: #fff; }
+        .bridge-item small { display: block; color: #8aa0b5; margin-top: 2px; }
+        .map-stage { flex: 1; position: relative; min-width: 0; }
+        #bridgeMap { position: absolute; inset: 0; }
+        .leaflet-div-icon.bridge-icon { background: transparent; border: none; }
+        .bridge-popup { min-width: 180px; line-height: 1.7; color: #1d2a36; }
+        .bridge-popup b { font-size: 15px; }
+        .map-legend {
+            position: absolute; top: 12px; right: 12px; z-index: 500;
+            background: rgba(255,255,255,.94); border-radius: 8px; padding: 10px 12px;
+            font-size: 12px; color: #243140; line-height: 1.9;
+        }
+        .map-legend i {
+            display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+            margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.12);
+        }
+        .map-note {
+            position: absolute; left: 12px; bottom: 12px; z-index: 500;
+            background: rgba(255,255,255,.92); color: #334; border-radius: 6px;
+            padding: 6px 10px; font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+<div class="map-shell">
+    <aside class="map-side">
+        <header>
+            <h1>桥梁地图</h1>
+            <div class="map-count" id="mapCount">正在读取桥梁坐标…</div>
+        </header>
+        <div class="map-tools">
+            <input id="bridgeKeyword" type="search" placeholder="搜索桥梁名称" autocomplete="off"/>
+            <select id="bridgeKind">
+                <option value="">全部已定位桥梁</option>
+                <option value="0">只看组合桥</option>
+                <option value="1">只看桥幅</option>
+            </select>
+            <select id="bridgeGrade">
+                <option value="">全部技术状况</option>
+                <option value="1">1类</option>
+                <option value="2">2类</option>
+                <option value="3">3类</option>
+                <option value="4">4类及以下</option>
+                <option value="none">未评定</option>
+            </select>
+        </div>
+        <div class="bridge-list" id="bridgeList"></div>
+    </aside>
+    <div class="map-stage">
+        <div id="bridgeMap"></div>
+        <div class="map-legend">
+            <div><i style="background:#2e9e4f"></i>1类</div>
+            <div><i style="background:#e0b000"></i>2类</div>
+            <div><i style="background:#f08a24"></i>3类</div>
+            <div><i style="background:#e23d3d"></i>4类及以下</div>
+            <div><i style="background:#8b95a1"></i>未评定</div>
+        </div>
+        <div class="map-note">颜色是最新一次全桥技术状况等级。坐标来自桥梁卡片 GPS。</div>
+    </div>
+</div>
+<th:block th:include="include :: footer"/>
+<script th:src="@{/ajax/libs/leaflet/leaflet.js}"></script>
+<script th:src="@{/ajax/libs/leaflet/leaflet.markercluster.js}"></script>
+<script th:inline="javascript">
+    var points = [];
+    var markers = {};
+    var map = L.map("bridgeMap", { zoomControl: true });
+    L.tileLayer("https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}", {
+        subdomains: "1234",
+        maxZoom: 18,
+        attribution: "高德地图"
+    }).addTo(map);
+    map.setView([30.6, 111.3], 7);
+    var cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48 });
+    map.addLayer(cluster);
+
+    function kindLabel(isLeaf) {
+        return isLeaf === "0" ? "组合桥" : "桥幅";
+    }
+
+    function gradeBucket(level) {
+        if (level == null || level === "") return "none";
+        var n = Number(level);
+        if (!n || n < 1) return "none";
+        return n >= 4 ? "4" : String(n);
+    }
+
+    function gradeColor(level) {
+        switch (gradeBucket(level)) {
+            case "1": return "#2e9e4f";
+            case "2": return "#e0b000";
+            case "3": return "#f08a24";
+            case "4": return "#e23d3d";
+            default: return "#8b95a1";
+        }
+    }
+
+    function levelText(level) {
+        var bucket = gradeBucket(level);
+        if (bucket === "none") return "未评定";
+        return Number(level) + "类";
+    }
+
+    function scoreText(score) {
+        if (score == null || score === "") return "—";
+        var n = Number(score);
+        return isNaN(n) ? "—" : n.toFixed(1);
+    }
+
+    function bridgeIcon(level) {
+        var color = gradeColor(level);
+        var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>"
+            + "<path fill='" + color + "' stroke='#fff' stroke-width='1.6' stroke-linejoin='round' "
+            + "d='M4 18.5h20v2.4H4z M6 18.5V12h2.6v6.5 M19.4 18.5V12H22v6.5'/>"
+            + "<path fill='none' stroke='" + color + "' stroke-width='2.4' stroke-linecap='round' "
+            + "d='M8.6 18.2c1.8-5.4 9-5.4 10.8 0'/>"
+            + "</svg>";
+        return L.divIcon({
+            className: "bridge-icon",
+            html: svg,
+            iconSize: [28, 28],
+            iconAnchor: [14, 22],
+            popupAnchor: [0, -18]
+        });
+    }
+
+    function popupHtml(point) {
+        var lines = "<div class='bridge-popup'><b>" + escapeHtml(point.name) + "</b><br>"
+            + kindLabel(point.isLeaf) + "<br>技术状况：" + levelText(point.systemLevel);
+        if (gradeBucket(point.systemLevel) !== "none") {
+            lines += "<br>全桥得分：" + scoreText(point.systemScore)
+                + "<br>上部结构：" + levelText(point.superstructureLevel)
+                + "<br>下部结构：" + levelText(point.substructureLevel)
+                + "<br>桥面系：" + levelText(point.deckSystemLevel);
+        }
+        return lines + "</div>";
+    }
+
+    function selected() {
+        var keyword = $("#bridgeKeyword").val().trim();
+        var kind = $("#bridgeKind").val();
+        var grade = $("#bridgeGrade").val();
+        return points.filter(function (point) {
+            if (kind && point.isLeaf !== kind) return false;
+            if (grade && gradeBucket(point.systemLevel) !== grade) return false;
+            if (keyword && (point.name || "").indexOf(keyword) < 0) return false;
+            return true;
+        });
+    }
+
+    function render(fit) {
+        var shown = selected();
+        cluster.clearLayers();
+        markers = {};
+        var bounds = [];
+        shown.forEach(function (point) {
+            var marker = L.marker([point.latitude, point.longitude], {
+                icon: bridgeIcon(point.systemLevel),
+                title: point.name
+            });
+            marker.bindPopup(popupHtml(point));
+            marker.on("click", function () { highlight(point.id); });
+            markers[point.id] = marker;
+            cluster.addLayer(marker);
+            bounds.push([point.latitude, point.longitude]);
+        });
+        if (fit && bounds.length) {
+            map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
+        }
+        renderList(shown);
+    }
+
+    function renderList(shown) {
+        var list = $("#bridgeList").empty();
+        var preview = shown.slice(0, 80);
+        preview.forEach(function (point) {
+            var button = $("<button type='button' class='bridge-item'></button>");
+            button.attr("data-id", point.id);
+            button.append($("<span></span>").text(point.name));
+            button.append($("<small></small>").text(levelText(point.systemLevel) + " · " + kindLabel(point.isLeaf)));
+            button.on("click", function () { focusPoint(point.id); });
+            list.append(button);
+        });
+        if (shown.length > preview.length) {
+            list.append($("<div class='bridge-item'></div>").text("列表只显示前 80 座，地图上共 " + shown.length + " 座。请继续输入名称。"));
+        }
+        if (!shown.length) {
+            list.append($("<div class='bridge-item'></div>").text("没有符合条件的桥梁"));
+        }
+    }
+
+    function focusPoint(id) {
+        var point = points.filter(function (item) { return item.id === id; })[0];
+        var marker = markers[id];
+        if (!point || !marker) return;
+        highlight(id);
+        map.setView([point.latitude, point.longitude], Math.max(map.getZoom(), 14));
+        cluster.zoomToShowLayer(marker, function () { marker.openPopup(); });
+    }
+
+    function highlight(id) {
+        $(".bridge-item").removeClass("active");
+        $(".bridge-item[data-id='" + id + "']").addClass("active");
+    }
+
+    function escapeHtml(text) {
+        return $("<div></div>").text(text || "").html();
+    }
+
+    $("#bridgeKeyword, #bridgeKind, #bridgeGrade").on("input change", function () { render(false); });
+
+    $.get(ctx + "biz/building/map/points", function (result) {
+        if (!result || result.code !== 0) {
+            $("#mapCount").text(result && result.msg ? result.msg : "坐标读取失败");
+            return;
+        }
+        var data = result.data || {};
+        points = data.points || [];
+        $("#mapCount").html("<b>" + (data.located || 0) + "</b>座已标注<br>桥梁共 " + (data.total || 0) + " 座，其余卡片里没有有效 GPS");
+        render(true);
+    }).fail(function () {
+        $("#mapCount").text("坐标读取失败");
+    });
+</script>
+</body>
+</html>

@@ -1,11 +1,14 @@
 package edu.whut.cs.bi.biz.controller;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.ruoyi.common.utils.ShiroUtils;
+import edu.whut.cs.bi.biz.domain.vo.BuildingMapPoint;
 import edu.whut.cs.bi.biz.domain.vo.ProjectBuildingVO;
 import edu.whut.cs.bi.biz.service.IBiObjectService;
 import edu.whut.cs.bi.biz.service.ReadFileService;
@@ -51,6 +54,27 @@ public class BuildingController extends BaseController {
 
     @Resource
     private ReadFileService readFileService;
+
+    @RequiresPermissions("biz:building:view")
+    @GetMapping("/map")
+    public String map() {
+        return prefix + "/map";
+    }
+
+    /**
+     * 地图标注。坐标取桥梁卡片属性 GPS经度、GPS纬度；建筑表经纬度列大多为空。
+     */
+    @RequiresPermissions("biz:building:view")
+    @GetMapping("/map/points")
+    @ResponseBody
+    public AjaxResult mapPoints() {
+        List<BuildingMapPoint> points = buildingService.selectBuildingMapPoints();
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", buildingService.countActiveBuildings());
+        data.put("located", points.size());
+        data.put("points", points);
+        return AjaxResult.success(data);
+    }
 
     @RequiresPermissions("biz:building:view")
     @GetMapping()

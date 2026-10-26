@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 import edu.whut.cs.bi.biz.domain.Building;
+import edu.whut.cs.bi.biz.domain.vo.BuildingMapPoint;
 import edu.whut.cs.bi.biz.domain.vo.ProjectBuildingVO;
 import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
@@ -141,4 +142,14 @@ public interface BuildingMapper {
      * 根据名称查询建筑信息
      */
     List<Building> selectBuildingByNames(@Param("buildingSet") Set<String> buildingSet);
+
+    /**
+     * 未删除桥梁总数。
+     */
+    int countActiveBuildings();
+
+    /**
+     * 卡片属性里带有有效 GPS 的桥梁。
+     */
+    List<BuildingMapPoint> selectBuildingMapPoints();
 }

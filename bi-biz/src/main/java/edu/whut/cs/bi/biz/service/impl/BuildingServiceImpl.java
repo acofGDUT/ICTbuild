@@ -13,6 +13,7 @@ import edu.whut.cs.bi.biz.domain.BiObject;
 import edu.whut.cs.bi.biz.domain.BiTemplateObject;
 import edu.whut.cs.bi.biz.domain.Building;
 import edu.whut.cs.bi.biz.domain.Task;
+import edu.whut.cs.bi.biz.domain.vo.BuildingMapPoint;
 import edu.whut.cs.bi.biz.domain.vo.ProjectBuildingVO;
 import edu.whut.cs.bi.biz.mapper.BuildingMapper;
 import edu.whut.cs.bi.biz.service.IBiObjectService;
@@ -77,6 +78,16 @@ public class BuildingServiceImpl implements IBuildingService {
     @Override
     public List<Building> selectBuildingList(Building building) {
         return buildingMapper.selectBuildingList(building);
+    }
+
+    @Override
+    public int countActiveBuildings() {
+        return buildingMapper.countActiveBuildings();
+    }
+
+    @Override
+    public List<BuildingMapPoint> selectBuildingMapPoints() {
+        return buildingMapper.selectBuildingMapPoints();
     }
 
     @Override
