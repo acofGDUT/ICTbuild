@@ -74,6 +74,9 @@
             <if test="report.status != null">
                 AND r.status = #{report.status}
             </if>
+            <if test="report.reviewer != null and report.reviewer != ''">
+                AND u1.login_name like concat('%', #{report.reviewer}, '%')
+            </if>
             <if test="report.reviewerId != null">
                 AND r.reviewer_id = #{report.reviewerId}
             </if>
@@ -88,6 +91,12 @@
             </if>
             <if test="report.taskIds != null and report.taskIds != ''">
                 AND r.task_ids = #{report.taskIds}
+            </if>
+            <if test="report.params != null and report.params.beginTime != null and report.params.beginTime != ''">
+                AND date_format(r.update_time,'%Y%m%d') &gt;= date_format(#{report.params.beginTime},'%Y%m%d')
+            </if>
+            <if test="report.params != null and report.params.endTime != null and report.params.endTime != ''">
+                AND date_format(r.update_time,'%Y%m%d') &lt;= date_format(#{report.params.endTime},'%Y%m%d')
             </if>
         </where>
     </select>

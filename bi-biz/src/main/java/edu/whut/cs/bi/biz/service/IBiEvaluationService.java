@@ -33,6 +33,11 @@ public interface IBiEvaluationService {
     public BiEvaluation selectBiEvaluationByTaskId(Long taskId);
 
     /**
+     * 按任务批量查询评定。
+     */
+    public List<BiEvaluation> selectBiEvaluationByTaskIds(List<Long> taskIds);
+
+    /**
      * 新增桥幅评定
      *
      * @param biEvaluation 桥幅评定

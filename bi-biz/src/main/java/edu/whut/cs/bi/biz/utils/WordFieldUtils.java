@@ -17,18 +17,37 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WordFieldUtils {
 
-    // 全局计数器
-    private static AtomicInteger tableSequence = new AtomicInteger(1);
-    private static AtomicInteger figureSequence = new AtomicInteger(1);
-    private static AtomicInteger bookmarkCounter = new AtomicInteger(1);
+    /**
+     * 表/图序号和书签 ID 按生成线程隔离。
+     * 报告并发时若共用一份静态计数器，一份报告 reset 会把另一份的书签起止 ID 对乱。
+     */
+    private static final ThreadLocal<Counters> COUNTERS = ThreadLocal.withInitial(Counters::new);
+
+    private static final class Counters {
+        private final AtomicInteger tableSequence = new AtomicInteger(1);
+        private final AtomicInteger figureSequence = new AtomicInteger(1);
+        private final AtomicInteger bookmarkCounter = new AtomicInteger(1);
+    }
+
+    private static Counters counters() {
+        return COUNTERS.get();
+    }
 
     /**
-     * 重置计数器（用于新文档）
+     * 重置当前线程计数器（用于新文档）
      */
     public static void resetCounters() {
-        tableSequence.set(1);
-        figureSequence.set(1);
-        bookmarkCounter.set(1);
+        Counters counters = counters();
+        counters.tableSequence.set(1);
+        counters.figureSequence.set(1);
+        counters.bookmarkCounter.set(1);
+    }
+
+    /**
+     * 释放当前线程计数器，避免线程池复用残留。
+     */
+    public static void removeCounters() {
+        COUNTERS.remove();
     }
 
     /**
@@ -72,7 +91,7 @@ public class WordFieldUtils {
         }
 
         // 生成唯一的书签名
-        String bookmarkName = "Table_" + bookmarkCounter.getAndIncrement();
+        String bookmarkName = "Table_" + counters().bookmarkCounter.getAndIncrement();
 
         // 添加静态前缀"表"字
         XWPFRun prefixRun = paragraph.createRun();
@@ -230,7 +249,7 @@ public class WordFieldUtils {
         // 创建书签开始 - 只包围编号部分
         CTBookmark bookmarkStart = paragraph.getCTP().addNewBookmarkStart();
         bookmarkStart.setName(bookmarkName);
-        bookmarkStart.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkStart.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
 
         // 创建表格序号域（使用平铺多域显示"3.1"格式）
         if (chapterNumber != null) {
@@ -243,8 +262,8 @@ public class WordFieldUtils {
 
         // 创建书签结束 - 只包围编号部分
         CTMarkupRange bookmarkEnd = paragraph.getCTP().addNewBookmarkEnd();
-        bookmarkEnd.setId(BigInteger.valueOf(bookmarkCounter.get()));
-        bookmarkCounter.incrementAndGet();
+        bookmarkEnd.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
+        counters().bookmarkCounter.incrementAndGet();
 
         // 添加标题文本
         XWPFRun titleRun = paragraph.createRun();
@@ -392,7 +411,7 @@ public class WordFieldUtils {
 
         // 生成或使用指定的书签名
         if (bookmarkName == null) {
-            bookmarkName = "Figure_" + bookmarkCounter.getAndIncrement();
+            bookmarkName = "Figure_" + counters().bookmarkCounter.getAndIncrement();
         }
 
         // 创建图片序号域。SEQ 标识用「图」，与 Word 中文题注一致，避免英文 Figure 和正文引用对不上。
@@ -447,7 +466,7 @@ public class WordFieldUtils {
 
         // 生成或使用指定的书签名
         if (bookmarkName == null) {
-            bookmarkName = "Figure_" + bookmarkCounter.getAndIncrement();
+            bookmarkName = "Figure_" + counters().bookmarkCounter.getAndIncrement();
         }
 
         // 添加静态前缀"图"字：五号黑体，不加粗
@@ -458,7 +477,7 @@ public class WordFieldUtils {
         // 创建书签开始 - 只包围编号部分
         CTBookmark bookmarkStart = paragraph.getCTP().addNewBookmarkStart();
         bookmarkStart.setName(bookmarkName);
-        bookmarkStart.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkStart.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
 
         // 创建图片序号域（Word 题注：STYLEREF 1 \s + 连接符 + SEQ，显示为图x-x）
         if (chapterNumber != null) {
@@ -469,8 +488,8 @@ public class WordFieldUtils {
 
         // 创建书签结束 - 只包围编号部分
         CTMarkupRange bookmarkEnd = paragraph.getCTP().addNewBookmarkEnd();
-        bookmarkEnd.setId(BigInteger.valueOf(bookmarkCounter.get()));
-        bookmarkCounter.incrementAndGet();
+        bookmarkEnd.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
+        counters().bookmarkCounter.incrementAndGet();
 
         // 添加标题文本
         if (titleText != null && !titleText.isEmpty()) {
@@ -649,7 +668,7 @@ public class WordFieldUtils {
         // 创建书签开始
         CTBookmark bookmarkStart = paragraph.getCTP().addNewBookmarkStart();
         bookmarkStart.setName(bookmarkName);
-        bookmarkStart.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkStart.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
 
         // 创建域开始
         CTFldChar fieldBegin = ctr.addNewFldChar();
@@ -676,7 +695,7 @@ public class WordFieldUtils {
             resultRPr.addNewSzCs().setVal(BigInteger.valueOf(22));
             // 设置初始显示值
             CTText resultText = resultCtr.addNewT();
-            resultText.setStringValue(String.valueOf(tableSequence.getAndIncrement()));
+            resultText.setStringValue(String.valueOf(counters().tableSequence.getAndIncrement()));
         } else if ("Figure".equals(seqName) || "图".equals(seqName)) {
             // 图片字体：黑体，21pt
             resultRPr.addNewRFonts().setAscii("黑体");
@@ -685,7 +704,7 @@ public class WordFieldUtils {
             resultRPr.addNewSzCs().setVal(BigInteger.valueOf(21));
             // 设置初始显示值
             CTText resultText = resultCtr.addNewT();
-            resultText.setStringValue(String.valueOf(figureSequence.getAndIncrement()));
+            resultText.setStringValue(String.valueOf(counters().figureSequence.getAndIncrement()));
         }
 
         // 创建域结束
@@ -695,7 +714,7 @@ public class WordFieldUtils {
 
         // 创建书签结束
         CTMarkupRange bookmarkEnd = paragraph.getCTP().addNewBookmarkEnd();
-        bookmarkEnd.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkEnd.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
     }
 
     /**
@@ -933,7 +952,7 @@ public class WordFieldUtils {
         // 创建书签开始
         CTBookmark bookmarkStart = paragraph.getCTP().addNewBookmarkStart();
         bookmarkStart.setName(bookmarkName);
-        bookmarkStart.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkStart.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
 
         // 创建域开始
         CTR ctr = paragraph.getCTP().addNewR();
@@ -966,7 +985,7 @@ public class WordFieldUtils {
 
         // 创建书签结束
         CTMarkupRange bookmarkEnd = paragraph.getCTP().addNewBookmarkEnd();
-        bookmarkEnd.setId(BigInteger.valueOf(bookmarkCounter.get()));
+        bookmarkEnd.setId(BigInteger.valueOf(counters().bookmarkCounter.get()));
     }
 
     /**

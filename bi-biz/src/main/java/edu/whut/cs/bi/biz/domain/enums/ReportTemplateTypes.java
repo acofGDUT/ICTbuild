@@ -51,6 +51,55 @@ public enum ReportTemplateTypes {
         return false;
     }
 
+    /**
+     * 是否单桥报告模板类型（二级梁桥、二级拱桥、一级梁桥）。
+     */
+    public static boolean isSingleBridge(Integer type) {
+        return type != null && (is2LevelSigleBridge(type) || is1LevelSigleBridge(type));
+    }
+
+    /**
+     * 单桥模板名 → 填报页类型（fillKind），与 resolveFillPath 的单桥分流规则一致。
+     * 非单桥模板返回 null。
+     */
+    public static String resolveSingleBridgeFillKind(String templateName) {
+        if (templateName == null || isMultiBridge(templateName)) {
+            return null;
+        }
+        if (templateName.contains("单桥") && templateName.contains("梁桥") && templateName.contains("二级")) {
+            return "fill_single_beam";
+        }
+        if (templateName.contains("单桥") && templateName.contains("拱桥") && templateName.contains("二级")) {
+            return "fill_single_arch";
+        }
+        if (templateName.contains("单桥") && templateName.contains("梁桥") && templateName.contains("一级")) {
+            return "fill_single_beam_level1";
+        }
+        return null;
+    }
+
+    /**
+     * 单桥模板名 → 桥型：beam 梁桥 / arch 拱桥；非单桥模板返回 null。
+     */
+    public static String singleBridgeKindOf(String templateName) {
+        String fillKind = resolveSingleBridgeFillKind(templateName);
+        if (fillKind == null) {
+            return null;
+        }
+        return "fill_single_arch".equals(fillKind) ? "arch" : "beam";
+    }
+
+    /**
+     * 单桥模板名 → 评定等级：1 一级 / 2 二级；非单桥模板返回 null。
+     */
+    public static Integer singleBridgeLevelOf(String templateName) {
+        String fillKind = resolveSingleBridgeFillKind(templateName);
+        if (fillKind == null) {
+            return null;
+        }
+        return "fill_single_beam_level1".equals(fillKind) ? 1 : 2;
+    }
+
     public static boolean isMultiBridge(String templateName) {
         return templateName != null && (templateName.contains("多桥")
                 || REGULAR_MULTI_BRIDGE_TEMPLATE_NAME.equals(templateName.trim()));

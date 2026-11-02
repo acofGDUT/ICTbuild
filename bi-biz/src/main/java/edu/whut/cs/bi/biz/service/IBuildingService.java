@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.List;
 
 import edu.whut.cs.bi.biz.domain.Building;
+import edu.whut.cs.bi.biz.domain.vo.BuildingMapPoint;
 import edu.whut.cs.bi.biz.domain.vo.ProjectBuildingVO;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -130,4 +131,14 @@ public interface IBuildingService {
     public void readBuildingExcel(MultipartFile file, Long projectId);
     
     Building getUniqueBuilding(String bridgeName, String lineCode, String zipCode);
+
+    /**
+     * 未删除桥梁总数。
+     */
+    int countActiveBuildings();
+
+    /**
+     * 卡片属性里带有有效 GPS 的桥梁，供地图标注。
+     */
+    List<BuildingMapPoint> selectBuildingMapPoints();
 }

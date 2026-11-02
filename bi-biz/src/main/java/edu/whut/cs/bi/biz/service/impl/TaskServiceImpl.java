@@ -430,4 +430,52 @@ public class TaskServiceImpl implements ITaskService {
         return taskMapper.selectTaskListByIds(ids);
     }
 
+    @Override
+    public List<Task> selectTasksByBuildingId(Long buildingId, Integer year) {
+        if (buildingId == null) {
+            return new ArrayList<>();
+        }
+        Task query = new Task();
+        query.setBuildingId(buildingId);
+        if (year != null) {
+            Project project = new Project();
+            project.setYear(year);
+            query.setProject(project);
+        }
+        List<Task> tasks = taskMapper.selectTaskList(query, null);
+        return tasks == null ? new ArrayList<>() : tasks;
+    }
+
+    @Override
+    public List<Task> selectTasksForUser(Long userId, Long projectId, Integer year) {
+        if (userId == null) {
+            return new ArrayList<>();
+        }
+        Task query = new Task();
+        query.setProjectId(projectId);
+        if (year != null) {
+            Project project = new Project();
+            project.setYear(year);
+            query.setProject(project);
+        }
+        List<Task> tasks = taskMapper.selectTaskList(query, userId);
+        return tasks == null ? new ArrayList<>() : tasks;
+    }
+
+    @Override
+    public List<Task> selectTasksByProject(Long projectId, Integer year) {
+        if (projectId == null) {
+            return new ArrayList<>();
+        }
+        Task query = new Task();
+        query.setProjectId(projectId);
+        if (year != null) {
+            Project project = new Project();
+            project.setYear(year);
+            query.setProject(project);
+        }
+        List<Task> tasks = taskMapper.selectTaskList(query, null);
+        return tasks == null ? new ArrayList<>() : tasks;
+    }
+
 }

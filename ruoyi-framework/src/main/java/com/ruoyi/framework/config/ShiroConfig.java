@@ -304,6 +304,11 @@ public class ShiroConfig
         // 不需要拦截的访问
         filterChainDefinitionMap.put("/login", "anon,captchaValidate");
         filterChainDefinitionMap.put("/jwt/login", "anon");
+        // MCP OAuth 授权服务器
+        filterChainDefinitionMap.put("/.well-known/**", "anon");
+        filterChainDefinitionMap.put("/oauth/authorize", "anon,captchaValidate");
+        filterChainDefinitionMap.put("/oauth/connect", "anon,captchaValidate");
+        filterChainDefinitionMap.put("/oauth/**", "anon");
         // 注册相关
         filterChainDefinitionMap.put("/register", "anon,captchaValidate");
         // 系统权限列表

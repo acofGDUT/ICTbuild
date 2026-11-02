@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>授权 AI 客户端访问桥梁数据</title>
+    <link th:href="@{/css/bootstrap.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/font-awesome.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/style.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/login.min.css}" rel="stylesheet"/>
+    <link rel="shortcut icon" th:href="@{/favicon.ico}"/>
+    <style type="text/css">
+        .oauth-panel { max-width: 420px; margin: 8% auto 0; background: rgba(255,255,255,.96); border-radius: 6px; padding: 28px 32px; color: #333; }
+        .oauth-panel h3 { margin-top: 0; font-weight: 600; }
+        .oauth-client { background: #f3f6fa; border-radius: 4px; padding: 10px 12px; margin: 14px 0; font-size: 13px; line-height: 1.8; }
+        .oauth-client strong { color: #1c84c6; }
+        .oauth-panel .form-control { margin-bottom: 12px; }
+        .oauth-actions { display: flex; gap: 10px; margin-top: 6px; }
+        .oauth-actions .btn { flex: 1; }
+        .oauth-error { color: #ed5565; margin-bottom: 10px; }
+        .imgcode { cursor: pointer; height: 34px; }
+    </style>
+</head>
+<body class="signin">
+<div class="oauth-panel">
+    <h3>授权 AI 客户端</h3>
+    <div class="oauth-client">
+        <div><strong th:text="${clientName}">AI 客户端</strong> 请求以你的身份访问桥梁检测系统数据。</div>
+        <div th:if="${canWrite == true}">权限范围：查询桥梁、病害与评定数据；创建单桥检测报告、填写重点关注病害、补算未评定（bridge:read + bridge:write）。操作权限与你在网页端的项目权限一致，写操作仍受你在网页端的角色权限限制。</div>
+        <div th:if="${canWrite != true}">权限范围：查询桥梁、病害与评定数据，只读，不能修改数据（bridge:read）。</div>
+        <div>有效期：<span th:text="${tokenDays}">7</span> 天，到期后需重新登录；可在“个人中心 → AI 授权管理”随时撤销。</div>
+        <div>授权后返回：<span th:text="${redirectHost}">http://127.0.0.1</span></div>
+    </div>
+    <div class="oauth-error" th:if="${error != null}" th:text="${error}">错误信息</div>
+    <form method="post" th:action="@{/oauth/authorize}" autocomplete="off">
+        <input type="hidden" name="request" th:value="${request}"/>
+        <input type="text" name="username" class="form-control" placeholder="用户名" th:value="${username}" required autofocus/>
+        <input type="password" name="password" class="form-control" placeholder="密码" required/>
+        <div class="row" th:if="${captchaEnabled == true}">
+            <div class="col-xs-6">
+                <input type="text" name="validateCode" class="form-control" placeholder="验证码" maxlength="5" required/>
+            </div>
+            <div class="col-xs-6">
+                <img th:src="@{/captcha/captchaImage(type=${captchaType})}" class="imgcode" title="点击更换验证码"
+                     th:data-src="@{/captcha/captchaImage(type=${captchaType})}"
+                     onclick="this.src=this.getAttribute('data-src')+'&amp;s='+Math.random()"/>
+            </div>
+        </div>
+        <div class="oauth-actions">
+            <button type="submit" name="action" value="deny" class="btn btn-default" formnovalidate>拒绝</button>
+            <button type="submit" name="action" value="approve" class="btn btn-success">登录并授权</button>
+        </div>
+    </form>
+</div>
+</body>
+</html>

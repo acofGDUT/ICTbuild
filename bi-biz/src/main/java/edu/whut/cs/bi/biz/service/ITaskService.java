@@ -123,4 +123,19 @@ public interface ITaskService
      * @return 任务集合
      */
     List<Task> selectTaskListByIds(List<Long> ids);
+
+    /**
+     * 按桥梁查询未删除的检测任务，可选项目年份。不做分页，也不按当前用户收窄。
+     */
+    List<Task> selectTasksByBuildingId(Long buildingId, Integer year);
+
+    /**
+     * 查询某个用户参与的项目任务。可按项目和年份收窄。不做分页。
+     */
+    List<Task> selectTasksForUser(Long userId, Long projectId, Integer year);
+
+    /**
+     * 查询某个项目下未删除的检测任务，可选项目年份。不做分页，也不按项目人员收窄。
+     */
+    List<Task> selectTasksByProject(Long projectId, Integer year);
 }

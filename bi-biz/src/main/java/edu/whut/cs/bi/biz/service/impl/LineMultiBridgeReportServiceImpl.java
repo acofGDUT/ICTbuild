@@ -316,6 +316,8 @@ public class LineMultiBridgeReportServiceImpl implements ILineMultiBridgeReportS
             log.error("生成多桥报告失败", e);
             throw new IllegalStateException("生成多桥报告失败：" + e.getMessage(), e);
         } finally {
+            testConclusionService.removeDiseaseSummaryCache();
+            WordFieldUtils.removeCounters();
             try {
                 if (templateStream != null) {
                     templateStream.close();
@@ -3940,8 +3942,8 @@ public class LineMultiBridgeReportServiceImpl implements ILineMultiBridgeReportS
                 String bookmarkName = "fig_status_" + chapterImageCounter.getAndIncrement();
                 // 获取照片备注作为描述，如果没有则使用默认描述
                 String imageDesc = fileMap.getAttachmentRemark() != null && !fileMap.getAttachmentRemark().isEmpty()
-                        ? fileMap.getAttachmentRemark()
-                        : biObject.getName() + "现状照片";
+                        ? ReportGenerateTools.finishStatusCaption(fileMap.getAttachmentRemark())
+                        : biObject.getName() + "现状";
 
                 // 将图片信息添加到列表，包含书签名和描述
                 allImages.add(Pair.of(newName, bookmarkName + "|" + imageDesc));

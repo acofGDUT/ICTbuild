@@ -41,7 +41,7 @@
                 </div>
             </div>
             <div class="col-sm-5">
-                <form id="signupForm" autocomplete="off">
+                <form id="signupForm" method="post" autocomplete="off">
                     <h4 class="no-margins">登录：</h4>
                     <p class="m-t-md"></p>
                     <input type="text"     name="username" class="form-control uname"     placeholder="用户名" value="admin"    />
@@ -69,7 +69,7 @@
             </div>
         </div>
     </div>
-<script th:inline="javascript"> var ctx = [[@{/}]]; var captchaType = [[${captchaType}]]; </script>
+<script th:inline="javascript"> var ctx = [[@{/}]]; var captchaType = [[${captchaType}]]; var captchaEnabled = [[${captchaEnabled}]];</script>
 <!--[if lte IE 8]><script>window.location.href=ctx+'html/ie.html';</script><![endif]-->
 <!-- 全局js -->
 <script src="../static/js/jquery.min.js" th:src="@{/js/jquery.min.js}"></script>

@@ -9,6 +9,7 @@ import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.ShiroUtils;
 import edu.whut.cs.bi.biz.domain.*;
+import edu.whut.cs.bi.biz.domain.enums.AreaIdentifierEnums;
 import edu.whut.cs.bi.biz.mapper.BiObjectMapper;
 import edu.whut.cs.bi.biz.mapper.BuildingMapper;
 import edu.whut.cs.bi.biz.mapper.ProjectMapper;
@@ -40,6 +41,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -65,14 +69,17 @@ public class TaskController extends BaseController {
     private String prefix = "biz/task";
 
     private static final String[] BATCH_DISEASE_HEADERS = {
-            "序号", "桥梁名称", "幅别", "部位", "部件", "缺损位置", "缺损类型", "数量", "数量合计", "单位",
+            "序号", "桥梁名称", "幅别", "部位", "部件", "缺损位置", "缺损类型", "数量",
+            "长度(m)", "缝宽(mm)", "面积(㎡)",
             "缺损情况", "维修建议", "评定类别", "照片编号", "发展趋势", "备注"
     };
 
     /** 纯Excel普通列的最大宽度（字符数）；缺损位置、缺损类型、缺损情况使用对应的固定宽度。 */
     private static final int[] BATCH_DISEASE_EXCEL_MAX_WIDTHS = {
-            8, 18, 10, 16, 16, 22, 26, 8, 10, 8, 46, 30, 10, 12, 24, 16
+            8, 18, 10, 16, 16, 22, 26, 8, 12, 12, 12, 46, 30, 10, 12, 24, 16
     };
+
+    private static final MathContext DISEASE_AREA_CONTEXT = new MathContext(4, RoundingMode.HALF_UP);
 
     private static class BatchDiseaseExcelData {
         private final Map<Long, Task> taskMap = new HashMap<>();
@@ -308,7 +315,7 @@ public class TaskController extends BaseController {
      */
     @RequiresPermissions("biz:disease:export")
     @Log(title = "批量导出任务病害Excel", businessType = BusinessType.EXPORT)
-    @GetMapping("/batchExportExcel")
+    @RequestMapping(value = "/batchExportExcel", method = {RequestMethod.GET, RequestMethod.POST})
     public void batchExportExcel(@RequestParam("taskIds") String taskIds, HttpServletResponse response) throws IOException {
         System.out.println("开始批量导出任务病害Excel，任务ID: " + taskIds);
         List<Long> taskIdList = parseTaskIds(taskIds);
@@ -374,6 +381,7 @@ public class TaskController extends BaseController {
         int rowIndex = 1;
         int diseaseSerialNum = 1;
         int photoSerialNum = 1;
+        Set<String> exportedProjectBuildings = new LinkedHashSet<>();
 
         for (Long taskId : taskIdList) {
             Task task = photoLinks ? excelData.taskMap.get(taskId) : taskService.selectTaskById(taskId);
@@ -385,14 +393,27 @@ public class TaskController extends BaseController {
             if (photoLinks) {
                 diseaseList = excelData.diseaseMap.getOrDefault(taskId, Collections.emptyList());
             } else {
+                if (task.getProjectId() == null || task.getBuildingId() == null) {
+                    continue;
+                }
+                String pairKey = projectBuildingKey(task.getProjectId(), task.getBuildingId());
+                if (!exportedProjectBuildings.add(pairKey)) {
+                    // 同一项目同一桥只导出一次，避免勾选重复任务时病害翻倍
+                    continue;
+                }
+                // 与病害页单桥导出一致：按项目+桥梁取数，不按可能错乱的 task_id 过滤
                 Disease queryDisease = new Disease();
-                queryDisease.setTaskId(taskId);
+                queryDisease.setProjectId(task.getProjectId());
+                queryDisease.setBuildingId(task.getBuildingId());
                 diseaseList = diseaseService.selectDiseaseListForTask(queryDisease);
             }
 
+            Map<Long, BiObject> structureObjects = photoLinks
+                    ? excelData.biObjectMap
+                    : loadStructureObjects(diseaseList);
             List<Disease> sortedDiseaseList = new ArrayList<>(diseaseList);
-            sortedDiseaseList.sort((left, right) -> NaturalStringComparator.compare(
-                    getDiseaseLocation(left), getDiseaseLocation(right)));
+            sortedDiseaseList.sort((left, right) ->
+                    compareDiseaseByStructureOrder(left, right, structureObjects));
 
             for (Disease disease : sortedDiseaseList) {
                 Row row = sheet.createRow(rowIndex++);
@@ -458,9 +479,9 @@ public class TaskController extends BaseController {
                 }
                 row.createCell(cellIndex++).setCellValue(type != null ? type : "");
                 row.createCell(cellIndex++).setCellValue(disease.getQuantity());
-                // 数量合计暂无明确计算逻辑
-                row.createCell(cellIndex++).setCellValue("");
-                row.createCell(cellIndex++).setCellValue(disease.getUnits() != null ? disease.getUnits() : "");
+                row.createCell(cellIndex++).setCellValue(diseaseLengthText(disease));
+                row.createCell(cellIndex++).setCellValue(diseaseCrackWidthText(disease));
+                row.createCell(cellIndex++).setCellValue(diseaseAreaText(disease));
                 row.createCell(cellIndex++).setCellValue(
                         disease.getDescription() != null ? disease.getDescription() : "");
                 row.createCell(cellIndex++).setCellValue(
@@ -515,7 +536,7 @@ public class TaskController extends BaseController {
             sheet.autoSizeColumn(i);
             int currentWidth = Math.min(sheet.getColumnWidth(i), maxColumnWidth);
             int compactWidth = Math.min(currentWidth + 2 * 256, maxColumnWidth);
-            if (i == 5 || i == 6 || i == 10) {
+            if (i == 5 || i == 6 || i == 11) {
                 // 缺损位置、缺损类型、缺损情况使用指定的固定宽度。
                 sheet.setColumnWidth(i, BATCH_DISEASE_EXCEL_MAX_WIDTHS[i] * 256);
             } else {
@@ -527,6 +548,118 @@ public class TaskController extends BaseController {
     }
 
     /**
+     * 按结构树显示顺序排序。祖先链从桥根排到病害节点：上部结构在下部结构前，
+     * 同一部位里上部承重构件在上部一般构件前。同一节点下再按构件名称，最后用病害 id 保持稳定。
+     */
+    private int compareDiseaseByStructureOrder(Disease left, Disease right, Map<Long, BiObject> objectMap) {
+        int pathCompared = compareOrderPath(structureOrderPath(left, objectMap), structureOrderPath(right, objectMap));
+        if (pathCompared != 0) {
+            return pathCompared;
+        }
+
+        int nameCompared = NaturalStringComparator.compare(getDiseaseLocation(left), getDiseaseLocation(right));
+        if (nameCompared != 0) {
+            return nameCompared;
+        }
+        long leftId = left == null || left.getId() == null ? Long.MAX_VALUE : left.getId();
+        long rightId = right == null || right.getId() == null ? Long.MAX_VALUE : right.getId();
+        return Long.compare(leftId, rightId);
+    }
+
+    private int compareOrderPath(List<Integer> leftPath, List<Integer> rightPath) {
+        if (leftPath.isEmpty() || rightPath.isEmpty()) {
+            if (leftPath.isEmpty() == rightPath.isEmpty()) {
+                return 0;
+            }
+            return leftPath.isEmpty() ? 1 : -1;
+        }
+        int size = Math.min(leftPath.size(), rightPath.size());
+        for (int i = 0; i < size; i++) {
+            int compared = Integer.compare(leftPath.get(i), rightPath.get(i));
+            if (compared != 0) {
+                return compared;
+            }
+        }
+        return Integer.compare(leftPath.size(), rightPath.size());
+    }
+
+    /**
+     * 用祖先 id 串组路径，不依赖 parentId。祖先对象缺失时补一个空位，避免层级错开。
+     */
+    private List<Integer> structureOrderPath(Disease disease, Map<Long, BiObject> objectMap) {
+        List<Integer> path = new ArrayList<>();
+        if (disease == null || disease.getBiObjectId() == null || objectMap == null) {
+            return path;
+        }
+        BiObject self = objectMap.get(disease.getBiObjectId());
+        if (self == null) {
+            return path;
+        }
+        if (self.getAncestors() != null && !self.getAncestors().isEmpty()) {
+            for (String ancestorId : self.getAncestors().split(",")) {
+                Long id = parseObjectId(ancestorId);
+                if (id == null || id <= 0) {
+                    continue;
+                }
+                path.add(orderNumOf(objectMap.get(id)));
+            }
+        }
+        path.add(orderNumOf(self));
+        return path;
+    }
+
+    private Long parseObjectId(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private int orderNumOf(BiObject node) {
+        if (node == null || node.getOrderNum() == null) {
+            return Integer.MAX_VALUE;
+        }
+        return node.getOrderNum();
+    }
+
+    /**
+     * 压缩包导出没有预加载结构树，排序前补齐病害节点及其祖先的显示顺序。
+     */
+    private Map<Long, BiObject> loadStructureObjects(List<Disease> diseases) {
+        Map<Long, BiObject> objectMap = new HashMap<>();
+        Set<Long> ids = new LinkedHashSet<>();
+        for (Disease disease : diseases) {
+            if (disease.getBiObjectId() != null) {
+                ids.add(disease.getBiObjectId());
+            }
+        }
+        putValidBiObjects(objectMap, ids);
+
+        Set<Long> ancestorIds = new LinkedHashSet<>();
+        for (BiObject biObject : new ArrayList<>(objectMap.values())) {
+            if (biObject.getAncestors() == null || biObject.getAncestors().isEmpty()) {
+                continue;
+            }
+            for (String ancestorId : biObject.getAncestors().split(",")) {
+                try {
+                    Long id = Long.valueOf(ancestorId.trim());
+                    if (id > 0 && !objectMap.containsKey(id)) {
+                        ancestorIds.add(id);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // 非法祖先 ID 不参与排序。
+                }
+            }
+        }
+        putValidBiObjects(objectMap, ancestorIds);
+        return objectMap;
+    }
+
+    /**
      * 获取批量导出 Excel 中“缺损位置”列的实际显示值。
      */
     private String getDiseaseLocation(Disease disease) {
@@ -534,6 +667,10 @@ public class TaskController extends BaseController {
             return null;
         }
         return disease.getComponent().getName();
+    }
+
+    private String projectBuildingKey(Long projectId, Long buildingId) {
+        return String.valueOf(projectId) + "_" + String.valueOf(buildingId);
     }
 
     /**
@@ -553,20 +690,45 @@ public class TaskController extends BaseController {
     }
 
     /**
-     * 批量准备纯Excel导出数据。ZIP导出不调用此方法，继续沿用原查询链路。
+     * 批量准备纯Excel导出数据。
+     * 病害按任务的项目+桥梁归属，避免 task_id 错乱时批量导出比单桥少。
      */
     private BatchDiseaseExcelData loadBatchDiseaseExcelData(List<Long> taskIdList) {
         BatchDiseaseExcelData data = new BatchDiseaseExcelData();
 
+        Map<Long, Task> tasksById = new LinkedHashMap<>();
+        for (Long taskId : taskIdList) {
+            // 先占位，后面用库中任务覆盖，保持勾选顺序
+            tasksById.put(taskId, null);
+        }
         for (Task task : taskService.selectTaskListByIds(taskIdList)) {
+            tasksById.put(task.getId(), task);
             data.taskMap.put(task.getId(), task);
         }
 
-        List<Disease> diseases = diseaseService.selectDiseaseListForExcel(taskIdList);
+        List<Task> loadedTasks = new ArrayList<>();
+        Map<String, Long> projectBuildingToTaskId = new LinkedHashMap<>();
+        for (Long taskId : taskIdList) {
+            Task task = tasksById.get(taskId);
+            if (task == null || task.getProjectId() == null || task.getBuildingId() == null) {
+                continue;
+            }
+            loadedTasks.add(task);
+            String pairKey = projectBuildingKey(task.getProjectId(), task.getBuildingId());
+            // 同一项目同一桥被勾选多次时，病害只挂到第一次出现的任务，避免重复行
+            projectBuildingToTaskId.putIfAbsent(pairKey, task.getId());
+        }
+
+        List<Disease> diseases = diseaseService.selectDiseaseListForExcel(loadedTasks);
         Set<Long> buildingIds = new LinkedHashSet<>();
         Set<Long> initialBiObjectIds = new LinkedHashSet<>();
         for (Disease disease : diseases) {
-            data.diseaseMap.computeIfAbsent(disease.getTaskId(), key -> new ArrayList<>()).add(disease);
+            Long ownerTaskId = projectBuildingToTaskId.get(
+                    projectBuildingKey(disease.getProjectId(), disease.getBuildingId()));
+            if (ownerTaskId == null) {
+                continue;
+            }
+            data.diseaseMap.computeIfAbsent(ownerTaskId, key -> new ArrayList<>()).add(disease);
             if (disease.getImages() != null) {
                 int photoCount = 0;
                 for (String imageUrl : disease.getImages()) {
@@ -629,11 +791,11 @@ public class TaskController extends BaseController {
 
     private String[] createBatchDiseaseExcelHeaders(int photoCount) {
         List<String> headers = new ArrayList<>();
-        for (int i = 0; i < 13; i++) {
+        for (int i = 0; i < 14; i++) {
             headers.add(BATCH_DISEASE_HEADERS[i]);
         }
-        headers.add(BATCH_DISEASE_HEADERS[14]);
         headers.add(BATCH_DISEASE_HEADERS[15]);
+        headers.add(BATCH_DISEASE_HEADERS[16]);
         headers.add("更新用户名");
         for (int i = 0; i < photoCount; i++) {
             headers.add(photoCount == 1 ? "照片" : "照片" + (i + 1));
@@ -648,16 +810,123 @@ public class TaskController extends BaseController {
         }
 
         // ZIP内Excel仍保持“照片编号、发展趋势、备注”的原列顺序。
-        if (columnIndex == 13) {
-            return 12;
-        }
         if (columnIndex == 14) {
-            return BATCH_DISEASE_EXCEL_MAX_WIDTHS[13];
+            return 12;
         }
         if (columnIndex == 15) {
             return BATCH_DISEASE_EXCEL_MAX_WIDTHS[14];
         }
+        if (columnIndex == 16) {
+            return BATCH_DISEASE_EXCEL_MAX_WIDTHS[15];
+        }
         return BATCH_DISEASE_EXCEL_MAX_WIDTHS[columnIndex];
+    }
+
+    /**
+     * 与病害页导出一致：一条明细取长度或长度范围中值；多条明细取长度的最小、最大值中值。
+     */
+    private String diseaseLengthText(Disease disease) {
+        List<DiseaseDetail> details = diseaseDetailsOf(disease);
+        if (details.isEmpty()) {
+            return "";
+        }
+        if (details.size() == 1) {
+            DiseaseDetail detail = details.get(0);
+            if (detail.getLength1() != null) {
+                return detail.getLength1().toPlainString();
+            }
+            return averageOf(detail.getLengthRangeStart(), detail.getLengthRangeEnd());
+        }
+        if (details.get(0).getLength1() == null) {
+            return "";
+        }
+        return averageOfExtremes(details.stream().map(DiseaseDetail::getLength1).toList());
+    }
+
+    /**
+     * 缝宽是裂缝张开宽度，单位毫米。计算方式与长度相同。
+     */
+    private String diseaseCrackWidthText(Disease disease) {
+        List<DiseaseDetail> details = diseaseDetailsOf(disease);
+        if (details.isEmpty()) {
+            return "";
+        }
+        if (details.size() == 1) {
+            DiseaseDetail detail = details.get(0);
+            if (detail.getCrackWidth() != null) {
+                return detail.getCrackWidth().toPlainString();
+            }
+            return averageOf(detail.getCrackWidthRangeStart(), detail.getCrackWidthRangeEnd());
+        }
+        if (details.get(0).getCrackWidth() == null) {
+            return "";
+        }
+        return averageOfExtremes(details.stream().map(DiseaseDetail::getCrackWidth).toList());
+    }
+
+    /**
+     * 面积＝面积长×面积宽。平均面积再乘病害数量；多条明细时把各条面积相加。结果保留 4 位有效数字。
+     */
+    private String diseaseAreaText(Disease disease) {
+        List<DiseaseDetail> details = diseaseDetailsOf(disease);
+        if (details.isEmpty()) {
+            return "";
+        }
+        if (details.size() == 1) {
+            DiseaseDetail detail = details.get(0);
+            if (detail.getAreaLength() == null || detail.getAreaWidth() == null) {
+                return "";
+            }
+            BigDecimal area = detail.getAreaLength().multiply(detail.getAreaWidth());
+            Integer identifier = detail.getAreaIdentifier();
+            if (identifier != null && identifier == AreaIdentifierEnums.AVERAGE.getCode()) {
+                area = area.multiply(BigDecimal.valueOf(disease.getQuantity()));
+            }
+            return area.round(DISEASE_AREA_CONTEXT).toPlainString();
+        }
+
+        BigDecimal total = BigDecimal.ZERO;
+        boolean hasArea = false;
+        for (DiseaseDetail detail : details) {
+            if (detail.getAreaLength() == null || detail.getAreaWidth() == null) {
+                continue;
+            }
+            total = total.add(detail.getAreaLength().multiply(detail.getAreaWidth()));
+            hasArea = true;
+        }
+        return hasArea ? total.round(DISEASE_AREA_CONTEXT).toPlainString() : "";
+    }
+
+    private List<DiseaseDetail> diseaseDetailsOf(Disease disease) {
+        if (disease == null || disease.getDiseaseDetails() == null) {
+            return Collections.emptyList();
+        }
+        return disease.getDiseaseDetails();
+    }
+
+    private String averageOf(BigDecimal start, BigDecimal end) {
+        if (start == null || end == null) {
+            return "";
+        }
+        return start.add(end).divide(new BigDecimal("2"), 6, RoundingMode.HALF_UP)
+                .stripTrailingZeros().toPlainString();
+    }
+
+    private String averageOfExtremes(List<BigDecimal> values) {
+        BigDecimal min = null;
+        BigDecimal max = null;
+        for (BigDecimal value : values) {
+            if (value == null) {
+                continue;
+            }
+            if (min == null || value.compareTo(min) < 0) {
+                min = value;
+            }
+            if (max == null || value.compareTo(max) > 0) {
+                max = value;
+            }
+        }
+        return averageOf(min, max);
     }
 
     private CellStyle createLeftAlignedStyle(Workbook workbook) {

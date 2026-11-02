@@ -1,6 +1,7 @@
 package edu.whut.cs.bi.biz.mapper;
 
 import edu.whut.cs.bi.biz.domain.BiEvaluation;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -17,6 +18,11 @@ public interface BiEvaluationMapper {
      * @return 桥梁技术状况评定
      */
     public BiEvaluation selectBiEvaluationById(Long id);
+
+    /**
+     * 按任务批量查询评定。一个任务可能有多条，调用方取最新一条。
+     */
+    public List<BiEvaluation> selectBiEvaluationByTaskIds(@Param("taskIds") List<Long> taskIds);
 
     /**
      * 查询桥梁技术状况评定列表

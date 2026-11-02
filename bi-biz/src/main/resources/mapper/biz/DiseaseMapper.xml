@@ -36,6 +36,7 @@
         <result property="updateBy" column="update_by"/>
         <result property="updateTime" column="update_time"/>
         <result property="taskId" column="task_id"/>
+        <result property="year" column="bp_year"/>
         <result property="imgNoExp" column="img_no_exp"/>
 
         <!-- diseaseType object -->
@@ -160,6 +161,16 @@
             #{taskId}
         </foreach>
         ), d.create_time desc
+    </select>
+
+    <!-- 与病害页导出一致：按项目+桥梁取数，避免 task_id 错乱/为空导致批量导出丢病害 -->
+    <select id="selectDiseaseListByProjectBuildings" resultMap="DiseaseResult">
+        <include refid="selectDiseaseVo"/>
+        where
+        <foreach item="task" collection="tasks" open="(" separator=" or " close=")">
+            (d.project_id = #{task.projectId} and d.building_id = #{task.buildingId})
+        </foreach>
+        order by d.building_id, d.create_time desc
     </select>
 
     <select id="selectDiseaseById" parameterType="Long" resultMap="DiseaseResult">

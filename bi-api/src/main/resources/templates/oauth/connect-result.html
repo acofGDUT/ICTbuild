@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>AI 客户端连接配置</title>
+    <link th:href="@{/css/bootstrap.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/font-awesome.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/style.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/login.min.css}" rel="stylesheet"/>
+    <link rel="shortcut icon" th:href="@{/favicon.ico}"/>
+    <style type="text/css">
+        .oauth-panel { max-width: 720px; margin: 4% auto 40px; background: rgba(255,255,255,.97); border-radius: 6px; padding: 28px 32px; color: #333; }
+        .oauth-panel h3 { margin-top: 0; font-weight: 600; }
+        .oauth-meta { background: #f3f6fa; border-radius: 4px; padding: 10px 12px; margin: 14px 0; font-size: 13px; line-height: 1.8; }
+        .oauth-meta strong { color: #1c84c6; }
+        .oauth-warn { background: #fff8e6; border: 1px solid #f8ac59; border-radius: 4px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
+        .copy-block { position: relative; margin-bottom: 8px; }
+        .copy-block pre { background: #1f2430; color: #e6e6e6; border: 0; border-radius: 4px; padding: 12px 14px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; margin: 0; }
+        .copy-block .btn { position: absolute; top: 8px; right: 8px; }
+        .token-line { font-family: Menlo, Consolas, monospace; }
+        .nav-tabs { margin-bottom: 12px; }
+        .steps { padding-left: 18px; font-size: 13px; line-height: 1.9; color: #555; }
+        .steps code { color: #c7254e; }
+    </style>
+</head>
+<body class="signin">
+<div class="oauth-panel">
+    <h3><i class="fa fa-check-circle text-navy"></i> 令牌已生成</h3>
+    <div class="oauth-meta">
+        <div>账号：<strong th:text="${userName == loginName ? loginName : userName + '（' + loginName + '）'}">管理员（admin）</strong></div>
+        <div>客户端：<span th:text="${clientLabel}">码道 CodeArts</span>　MCP 地址：<span th:text="${mcpUrl}">http://127.0.0.1:8081/mcp</span></div>
+        <div>到期时间：<span th:text="${expiresAt}">2026-10-26 12:00</span>，到期后回到本页重新生成。</div>
+    </div>
+    <div class="oauth-warn">
+        <i class="fa fa-exclamation-triangle"></i>
+        令牌只显示这一次，相当于你的只读登录凭证，请勿发给他人。忘记或泄露时，到“个人中心 → AI 授权管理”撤销后重新生成。
+    </div>
+
+    <ul class="nav nav-tabs" role="tablist">
+        <li th:class="${client == 'codearts' || client == 'other'} ? 'active'"><a href="#tab-codearts" data-tab>码道桌面端</a></li>
+        <li><a href="#tab-codearts-cli" data-tab>码道 CLI</a></li>
+        <li th:class="${client == 'cursor'} ? 'active'"><a href="#tab-cursor" data-tab>Cursor</a></li>
+        <li><a href="#tab-token" data-tab>仅令牌</a></li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane" id="tab-codearts" th:classappend="${client == 'codearts' || client == 'other'} ? 'active'">
+            <div class="copy-block">
+                <pre th:text="${codeartsDesktopConfig}">{}</pre>
+                <button type="button" class="btn btn-xs btn-primary" data-copy>复制</button>
+            </div>
+            <ol class="steps">
+                <li>打开码道，进入“扩展 → 连接器 → 自定义配置”。</li>
+                <li>如果已经有 <code>bridge</code> 配置，先删掉，再粘贴上面的内容并保存。</li>
+                <li>启用连接器，状态变为已连接后即可在对话里提问，例如“我是谁”“查一下我的项目”。</li>
+            </ol>
+        </div>
+        <div class="tab-pane" id="tab-codearts-cli">
+            <div class="copy-block">
+                <pre th:text="${codeartsCliConfig}">{}</pre>
+                <button type="button" class="btn btn-xs btn-primary" data-copy>复制</button>
+            </div>
+            <ol class="steps">
+                <li>编辑 <code>~/.codeartsdoer/codearts_cli.jsonc</code>，把 <code>bridge</code> 合并进已有的 <code>mcp</code> 节点。</li>
+                <li>执行 <code>codearts mcp list</code> 确认 bridge 已连接。</li>
+            </ol>
+        </div>
+        <div class="tab-pane" id="tab-cursor" th:classappend="${client == 'cursor'} ? 'active'">
+            <div class="copy-block">
+                <pre th:text="${cursorConfig}">{}</pre>
+                <button type="button" class="btn btn-xs btn-primary" data-copy>复制</button>
+            </div>
+            <ol class="steps">
+                <li>编辑 <code>~/.cursor/mcp.json</code>，把 <code>building-inspector</code> 合并进已有的 <code>mcpServers</code>。</li>
+                <li>在 Cursor 的 MCP 设置里启用该服务。</li>
+            </ol>
+        </div>
+        <div class="tab-pane" id="tab-token">
+            <div class="copy-block">
+                <pre class="token-line" th:text="${token}">bimcp_xxx</pre>
+                <button type="button" class="btn btn-xs btn-primary" data-copy>复制</button>
+            </div>
+            <ol class="steps">
+                <li>在客户端的请求头里配置 <code>Authorization: Bearer &lt;令牌&gt;</code>，MCP 地址填 <code th:text="${mcpUrl}">http://127.0.0.1:8081/mcp</code>。</li>
+            </ol>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var tabs = document.querySelectorAll('[data-tab]');
+        tabs.forEach(function (link) {
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                tabs.forEach(function (other) { other.parentNode.classList.remove('active'); });
+                document.querySelectorAll('.tab-pane').forEach(function (pane) { pane.classList.remove('active'); });
+                link.parentNode.classList.add('active');
+                document.querySelector(link.getAttribute('href')).classList.add('active');
+            });
+        });
+
+        function fallbackCopy(text) {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(area);
+            return ok;
+        }
+
+        document.querySelectorAll('[data-copy]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var pre = button.parentNode.querySelector('pre');
+                var text = pre.textContent;
+                var flash = function (label) {
+                    button.textContent = label;
+                    setTimeout(function () { button.textContent = '复制'; }, 2500);
+                };
+                var done = function () { flash('已复制'); };
+                var manual = function () {
+                    var range = document.createRange();
+                    range.selectNodeContents(pre);
+                    var selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    flash('已选中，请按 Ctrl/⌘+C');
+                };
+                var tryFallback = function () { fallbackCopy(text) ? done() : manual(); };
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).then(done, tryFallback);
+                } else {
+                    tryFallback();
+                }
+            });
+        });
+    })();
+</script>
+</body>
+</html>
