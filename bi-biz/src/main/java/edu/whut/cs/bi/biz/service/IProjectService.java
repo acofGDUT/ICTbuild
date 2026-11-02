@@ -35,6 +35,11 @@ public interface IProjectService
     public List<Project> selectProjectList(Project project);
 
     /**
+     * 部门业务范围：承担单位或所属单位是该部门，或是它的直接上级。不做分页，也不按项目人员收窄。
+     */
+    List<Project> selectDepartmentProjects(Long deptId, Long parentDeptId, Integer year, String name);
+
+    /**
      * 新增项目
      *
      * @param project 项目

@@ -37,6 +37,11 @@ public class Disease2FunctionCall {
     private String description;
 
     /**
+     * 病害标度
+     */
+    private int level;
+
+    /**
      * 病害数量
      */
     private int quantity;

@@ -105,7 +105,9 @@ public class ProjectServiceImpl implements IProjectService {
 
                 // 当前登录用户所属Department与bi_project表中owner_dept_id 或 dept_id一致的所有业务实体
                 project.setSelectDeptId(sysUser.getDeptId());
-                project.setParentDeptId(curSysDept.getParentId());
+                if (curSysDept != null) {
+                    project.setParentDeptId(curSysDept.getParentId());
+                }
 
                 projects = projectMapper.selectProjectList(project, null, null);
             } else {
@@ -122,8 +124,12 @@ public class ProjectServiceImpl implements IProjectService {
             SysDept ownerDept = deptService.selectDeptById(pj.getOwnerDeptId());
             pj.setOwnerDept(ownerDept);
 
-            if (Objects.equals(dept.getDeptId(), curSysDept.getParentId()) || Objects.equals(ownerDept.getDeptId(), curSysDept.getParentId())) {
-                pj.setParentDeptId(curSysDept.getParentId());
+            Long parentId = curSysDept == null ? null : curSysDept.getParentId();
+            boolean sameParent = parentId != null && (
+                    (dept != null && Objects.equals(dept.getDeptId(), parentId))
+                            || (ownerDept != null && Objects.equals(ownerDept.getDeptId(), parentId)));
+            if (sameParent) {
+                pj.setParentDeptId(parentId);
             }
 
             // 已选择桥梁数
@@ -133,6 +139,24 @@ public class ProjectServiceImpl implements IProjectService {
             }
         });
         return projects;
+    }
+
+    @Override
+    public List<Project> selectDepartmentProjects(Long deptId, Long parentDeptId, Integer year, String name) {
+        if (deptId == null) {
+            return List.of();
+        }
+        Project query = new Project();
+        query.setSelectDeptId(deptId);
+        if (parentDeptId != null && parentDeptId > 0) {
+            query.setParentDeptId(parentDeptId);
+        }
+        query.setYear(year);
+        if (name != null && !name.isBlank()) {
+            query.setName(name.trim());
+        }
+        List<Project> projects = projectMapper.selectProjectList(query, null, null);
+        return projects == null ? List.of() : projects;
     }
 
     /**

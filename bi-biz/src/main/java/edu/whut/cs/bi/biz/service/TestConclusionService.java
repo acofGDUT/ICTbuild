@@ -43,9 +43,14 @@ public interface TestConclusionService {
     void cacheDiseaseSummary(Long nodeId, String summary);
 
     /**
-     * 清空病害汇总缓存
+     * 清空当前线程的病害汇总缓存
      */
     void clearDiseaseSummaryCache();
+
+    /**
+     * 释放当前线程的病害汇总缓存。报告生成结束时必须调用，避免线程池复用串数据。
+     */
+    void removeDiseaseSummaryCache();
 
     /**
      * 2025 11.14

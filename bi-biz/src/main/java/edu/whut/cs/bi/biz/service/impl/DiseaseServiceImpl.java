@@ -301,15 +301,22 @@ public class DiseaseServiceImpl implements IDiseaseService {
 
     /**
      * 批量加载纯Excel导出需要的数据。
-     * 不查询Excel未使用的病害详情、构件父级信息，也不逐条查询附件和文件映射。
+     * 按项目+桥梁取数，避免 task_id 错乱导致丢病害；病害详情用于长度、缝宽、面积。
      */
     @Override
-    public List<Disease> selectDiseaseListForExcel(List<Long> taskIds) {
-        if (CollUtil.isEmpty(taskIds)) {
+    public List<Disease> selectDiseaseListForExcel(List<Task> tasks) {
+        if (CollUtil.isEmpty(tasks)) {
             return new ArrayList<>();
         }
 
-        List<Disease> diseases = diseaseMapper.selectDiseaseListByTaskIds(taskIds);
+        List<Task> queryTasks = tasks.stream()
+                .filter(task -> task != null && task.getProjectId() != null && task.getBuildingId() != null)
+                .collect(Collectors.toList());
+        if (queryTasks.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Disease> diseases = diseaseMapper.selectDiseaseListByProjectBuildings(queryTasks);
         if (CollUtil.isEmpty(diseases)) {
             return diseases;
         }
@@ -329,6 +336,15 @@ public class DiseaseServiceImpl implements IDiseaseService {
             componentService.selectComponentsByIds(componentIds).stream()
                     .filter(component -> "0".equals(component.getDelFlag()))
                     .forEach(component -> componentMap.put(component.getId(), component));
+        }
+
+        Map<Long, List<DiseaseDetail>> detailMap = new HashMap<>();
+        if (!diseaseIds.isEmpty()) {
+            for (DiseaseDetail detail : diseaseDetailMapper.selectDiseaseDetailsByDiseaseIds(diseaseIds)) {
+                if (detail.getDiseaseId() != null) {
+                    detailMap.computeIfAbsent(detail.getDiseaseId(), key -> new ArrayList<>()).add(detail);
+                }
+            }
         }
 
         Map<Long, List<Attachment>> attachmentMap = new HashMap<>();
@@ -356,6 +372,7 @@ public class DiseaseServiceImpl implements IDiseaseService {
 
         for (Disease disease : diseases) {
             disease.setComponent(componentMap.get(disease.getComponentId()));
+            disease.setDiseaseDetails(detailMap.getOrDefault(disease.getId(), new ArrayList<>()));
 
             List<String> imageUrls = new ArrayList<>();
             for (Attachment attachment : attachmentMap.getOrDefault(disease.getId(), Collections.emptyList())) {
@@ -389,22 +406,29 @@ public class DiseaseServiceImpl implements IDiseaseService {
     public List<Disease> selectDiseaseListForApi(Disease disease) {
 
         List<Disease> diseases = diseaseMapper.selectDiseaseList(disease);
+        if (diseases == null) {
+            return List.of();
+        }
 
         diseases.forEach(ds -> {
             Long componentId = ds.getComponentId();
 
             if (componentId != null) {
                 Component component = componentService.selectComponentById(componentId);
-                BiObject parent = biObjectMapper.selectDirectParentById(component.getBiObjectId());
-
-                if (parent != null) {
-                    component.setParentObjectName(parent.getName());
-                    BiObject grandBiObject = biObjectMapper.selectBiObjectById(parent.getParentId());
-                    if (grandBiObject != null) {
-                        component.setGrandObjectName(grandBiObject.getName());
+                if (component != null) {
+                    BiObject parent = component.getBiObjectId() == null
+                            ? null : biObjectMapper.selectDirectParentById(component.getBiObjectId());
+                    if (parent != null) {
+                        component.setParentObjectName(parent.getName());
+                        if (parent.getParentId() != null) {
+                            BiObject grandBiObject = biObjectMapper.selectBiObjectById(parent.getParentId());
+                            if (grandBiObject != null) {
+                                component.setGrandObjectName(grandBiObject.getName());
+                            }
+                        }
                     }
+                    ds.setComponent(component);
                 }
-                ds.setComponent(component);
             }
 
             DiseaseDetail diseaseDetail = new DiseaseDetail();
@@ -418,7 +442,7 @@ public class DiseaseServiceImpl implements IDiseaseService {
             if (CollUtil.isNotEmpty(diseaseImage)) {
                 diseaseImage.forEach(di -> {
                     Integer type = (Integer) di.get("type");
-                    if (type.equals(7)) {
+                    if (Integer.valueOf(7).equals(type)) {
                         ADImgs.add((String) di.get("url"));
                     } else {
                         images.add((String) di.get("url"));

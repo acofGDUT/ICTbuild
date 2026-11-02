@@ -32,4 +32,10 @@ public class BuildingMapPoint {
     private Integer substructureLevel;
 
     private Integer deckSystemLevel;
+
+    /** 这座桥最近一次检查任务，用来打开病害列表 */
+    private Long taskId;
+
+    /** 当前技术状况所属的检查任务，用来打开评定详情 */
+    private Long evaluationTaskId;
 }

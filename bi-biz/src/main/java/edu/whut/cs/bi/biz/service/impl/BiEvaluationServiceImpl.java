@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -55,6 +56,14 @@ public class BiEvaluationServiceImpl implements IBiEvaluationService {
         biEvaluation.setTaskId(taskId);
         List<BiEvaluation> evaluations = selectBiEvaluationList(biEvaluation);
         return evaluations.isEmpty() ? null : evaluations.get(0);
+    }
+
+    @Override
+    public List<BiEvaluation> selectBiEvaluationByTaskIds(List<Long> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return biEvaluationMapper.selectBiEvaluationByTaskIds(taskIds);
     }
 
     @Override

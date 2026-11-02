@@ -4,6 +4,7 @@ import cn.hutool.core.util.ObjectUtil;
 import com.ruoyi.common.utils.StringUtils;
 import edu.whut.cs.bi.biz.config.MinioConfig;
 import edu.whut.cs.bi.biz.domain.Attachment;
+import edu.whut.cs.bi.biz.domain.BiObject;
 import edu.whut.cs.bi.biz.domain.Disease;
 import edu.whut.cs.bi.biz.domain.FileMap;
 import edu.whut.cs.bi.biz.domain.constants.ReportConstants;
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.*;
 import org.jetbrains.annotations.NotNull;
+import org.apache.xmlbeans.XmlCursor;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -27,8 +29,10 @@ import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -283,6 +287,168 @@ public class ReportGenerateTools {
         segments.add(new TextSegment(missing ? placeholder : text.trim(), missing));
     }
 
+    /** 小四 = 12 磅 = 24 half-points。 */
+    public static final int BODY_FONT_HALF_POINTS = 24;
+
+    private static final Pattern CAUSE_POINT_PREFIX = Pattern.compile("^[（(]?\\d+[）).、．]\\s*");
+
+    private static final List<String> CAUSE_STRUCTURE_NAMES = List.of("上部结构", "下部结构", "桥面系");
+
+    /**
+     * 成因分析、处治建议的排序键：先上部结构、下部结构、桥面系，再按该层下部件的显示顺序。
+     * 只用于排序，不把这三层名称写进正文。
+     */
+    public static int[] causeStructureSortKey(Long biObjectId, Map<Long, BiObject> nodeMap) {
+        int structureRank = CAUSE_STRUCTURE_NAMES.size();
+        int componentOrder = Integer.MAX_VALUE;
+        int selfOrder = Integer.MAX_VALUE;
+        if (biObjectId == null || nodeMap == null || nodeMap.isEmpty()) {
+            return new int[]{structureRank, componentOrder, selfOrder};
+        }
+        BiObject self = nodeMap.get(biObjectId);
+        if (self != null && self.getOrderNum() != null) {
+            selfOrder = self.getOrderNum();
+        }
+        BiObject current = self;
+        int guard = 0;
+        while (current != null && guard++ < 32) {
+            String name = current.getName() == null ? "" : current.getName().trim();
+            int rank = CAUSE_STRUCTURE_NAMES.indexOf(name);
+            if (rank >= 0) {
+                structureRank = rank;
+                componentOrder = -1;
+                break;
+            }
+            Long parentId = current.getParentId();
+            BiObject parent = parentId == null ? null : nodeMap.get(parentId);
+            if (parent != null) {
+                String parentName = parent.getName() == null ? "" : parent.getName().trim();
+                int parentRank = CAUSE_STRUCTURE_NAMES.indexOf(parentName);
+                if (parentRank >= 0) {
+                    structureRank = parentRank;
+                    componentOrder = current.getOrderNum() == null ? Integer.MAX_VALUE : current.getOrderNum();
+                    break;
+                }
+            }
+            current = parent;
+        }
+        return new int[]{structureRank, componentOrder, selfOrder};
+    }
+
+    public static int compareCauseGroup(Long leftObjectId, Long rightObjectId, Long leftTypeId, Long rightTypeId,
+                                        Map<Long, BiObject> nodeMap) {
+        int[] left = causeStructureSortKey(leftObjectId, nodeMap);
+        int[] right = causeStructureSortKey(rightObjectId, nodeMap);
+        for (int i = 0; i < left.length; i++) {
+            int compared = Integer.compare(left[i], right[i]);
+            if (compared != 0) {
+                return compared;
+            }
+        }
+        long leftType = leftTypeId == null ? Long.MAX_VALUE : leftTypeId;
+        long rightType = rightTypeId == null ? Long.MAX_VALUE : rightTypeId;
+        return Long.compare(leftType, rightType);
+    }
+
+    /**
+     * 重点关注病害中的一条成因。单条写成「成因分析：1）…」，多条先单独写「成因分析：」再逐条编号。
+     * 知识库里已有的 1) / 1） 编号会去掉后重排，右括号用全角，以便符号走宋体、数字走 Times New Roman。
+     */
+    public static List<List<TextSegment>> causeAnalysisParagraphs(int index, String title, String cause) {
+        List<List<TextSegment>> paragraphs = new ArrayList<>();
+        paragraphs.add(List.of(new TextSegment("（" + index + "）" + (title == null ? "" : title), false)));
+        if (cause == null || cause.isBlank()) {
+            paragraphs.add(List.of(
+                    new TextSegment("成因分析：", false),
+                    new TextSegment(DiseaseCauseMatch.CAUSE_PLACEHOLDER, true)));
+            return paragraphs;
+        }
+        List<String> points = splitCausePoints(cause);
+        if (points.size() <= 1) {
+            String text = points.isEmpty() ? "" : withEnding(points.get(0), "。");
+            paragraphs.add(List.of(new TextSegment("成因分析：1）" + text, false)));
+            return paragraphs;
+        }
+        paragraphs.add(List.of(new TextSegment("成因分析：", false)));
+        for (int i = 0; i < points.size(); i++) {
+            String ending = i == points.size() - 1 ? "。" : "；";
+            paragraphs.add(List.of(new TextSegment((i + 1) + "）" + withEnding(points.get(i), ending), false)));
+        }
+        return paragraphs;
+    }
+
+    /**
+     * 技术建议：每条处治建议一行，编号 1）2）。正文相同（忽略空白和句末标点）的合并成一条，保留先出现的一条。
+     * 未匹配时写红字「需补充处治建议（病害名称）」，每条病害单独保留。
+     */
+    public static List<List<TextSegment>> technicalAdviceParagraphs(List<String> suggestions, List<String> diseases) {
+        List<String> texts = new ArrayList<>();
+        List<Boolean> missingFlags = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        if (suggestions != null) {
+            for (int i = 0; i < suggestions.size(); i++) {
+                String raw = suggestions.get(i);
+                boolean missing = raw == null || raw.isBlank()
+                        || DiseaseCauseMatch.SUGGESTION_PLACEHOLDER.equals(raw.trim());
+                if (missing) {
+                    String disease = diseases != null && i < diseases.size() ? diseases.get(i) : null;
+                    texts.add(missingAdvice(disease));
+                    missingFlags.add(true);
+                    continue;
+                }
+                String text = flattenAdvice(raw);
+                if (!seen.add(adviceKey(text))) {
+                    continue;
+                }
+                texts.add(text);
+                missingFlags.add(false);
+            }
+        }
+        List<List<TextSegment>> paragraphs = new ArrayList<>();
+        for (int i = 0; i < texts.size(); i++) {
+            String ending = i == texts.size() - 1 ? "。" : "；";
+            paragraphs.add(List.of(
+                    new TextSegment((i + 1) + "）", false),
+                    new TextSegment(withEnding(texts.get(i), ending), missingFlags.get(i))));
+        }
+        return paragraphs;
+    }
+
+    static List<String> splitCausePoints(String cause) {
+        List<String> points = new ArrayList<>();
+        for (String raw : cause.replace("\r\n", "\n").replace('\r', '\n').split("\n")) {
+            String line = raw == null ? "" : raw.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            line = CAUSE_POINT_PREFIX.matcher(line).replaceFirst("").trim();
+            if (!line.isEmpty()) {
+                points.add(line);
+            }
+        }
+        return points;
+    }
+
+    private static String missingAdvice(String disease) {
+        if (disease == null || disease.isBlank()) {
+            return DiseaseCauseMatch.SUGGESTION_PLACEHOLDER;
+        }
+        return DiseaseCauseMatch.SUGGESTION_PLACEHOLDER + "（" + disease.trim() + "）";
+    }
+
+    private static String flattenAdvice(String text) {
+        return text.replace("\r\n", "").replace("\n", "").replace("\r", "").trim();
+    }
+
+    private static String adviceKey(String text) {
+        return text.replaceAll("\\s+", "").replaceAll("[。；;，,、.]+$", "");
+    }
+
+    static String withEnding(String text, String ending) {
+        String trimmed = text == null ? "" : text.trim().replaceAll("[。；;]+$", "");
+        return trimmed + ending;
+    }
+
     /**
      * 用多段文字替换正文及表格中的占位符：沿用占位符所在 run 的格式，换行写为段内换行，highlight 片段标红。
      */
@@ -337,6 +503,95 @@ public class ReportGenerateTools {
             run.setColor("FF0000");
         }
         return run;
+    }
+
+    /**
+     * 用正文段落替换占位符。每段宋体小四、两端对齐、1.5 倍行距、首行缩进 2 字符；
+     * 数字和英文 Times New Roman，中文和全角符号宋体。highlight 片段标红。
+     */
+    public static void writeBodyParagraphs(XWPFDocument document, String placeholder,
+                                           List<List<TextSegment>> paragraphs) {
+        XWPFParagraph first = findParagraphByPlaceholder(document, placeholder);
+        if (first == null) {
+            log.warn("未找到占位符: {}", placeholder);
+            return;
+        }
+        clearParagraph(first);
+        if (paragraphs == null || paragraphs.isEmpty()) {
+            return;
+        }
+        fillBodyParagraph(first, paragraphs.get(0));
+        XmlCursor cursor = null;
+        try {
+            for (int i = 1; i < paragraphs.size(); i++) {
+                if (cursor == null) {
+                    cursor = first.getCTP().newCursor();
+                    if (!cursor.toNextSibling()) {
+                        cursor.toEndToken();
+                        cursor.toNextToken();
+                    }
+                }
+                XWPFParagraph paragraph = document.insertNewParagraph(cursor);
+                if (paragraph == null) {
+                    log.warn("无法在占位符后插入段落: {}", placeholder);
+                    return;
+                }
+                cursor.toNextToken();
+                fillBodyParagraph(paragraph, paragraphs.get(i));
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private static void fillBodyParagraph(XWPFParagraph paragraph, List<TextSegment> runs) {
+        if (runs != null) {
+            for (TextSegment segment : runs) {
+                if (segment == null || segment.text() == null || segment.text().isEmpty()) {
+                    continue;
+                }
+                int before = paragraph.getRuns().size();
+                appendMixedFontRuns(paragraph, segment.text(), BODY_FONT_HALF_POINTS, false, "宋体");
+                if (segment.highlight()) {
+                    List<XWPFRun> written = paragraph.getRuns();
+                    for (int i = before; i < written.size(); i++) {
+                        written.get(i).setColor("FF0000");
+                    }
+                }
+            }
+        }
+        applyReportBodyFormat(paragraph);
+    }
+
+    /** 正文：两端对齐、首行缩进 2 字符、1.5 倍行距。字体由调用方按中西文分别写入。 */
+    static void applyReportBodyFormat(XWPFParagraph paragraph) {
+        if (paragraph == null) {
+            return;
+        }
+        String style = paragraph.getStyle();
+        if (style != null && style.trim().matches("[1-9]")) {
+            paragraph.setStyle(null);
+        }
+        paragraph.setAlignment(ParagraphAlignment.BOTH);
+        CTPPr ppr = paragraph.getCTP().isSetPPr() ? paragraph.getCTP().getPPr() : paragraph.getCTP().addNewPPr();
+        if (ppr.isSetOutlineLvl()) {
+            ppr.unsetOutlineLvl();
+        }
+        if (ppr.isSetNumPr()) {
+            ppr.unsetNumPr();
+        }
+        CTJc jc = ppr.isSetJc() ? ppr.getJc() : ppr.addNewJc();
+        jc.setVal(STJc.BOTH);
+        CTInd ind = ppr.isSetInd() ? ppr.getInd() : ppr.addNewInd();
+        if (ind.isSetFirstLineChars()) {
+            ind.unsetFirstLineChars();
+        }
+        ind.setFirstLine(BigInteger.valueOf(480));
+        CTSpacing spacing = ppr.isSetSpacing() ? ppr.getSpacing() : ppr.addNewSpacing();
+        spacing.setLine(BigInteger.valueOf(360));
+        spacing.setLineRule(STLineSpacingRule.AUTO);
     }
 
     private static void collectTableParagraphs(List<XWPFTable> tables, List<XWPFParagraph> paragraphs) {
@@ -799,6 +1054,24 @@ public class ReportGenerateTools {
     }
 
     /**
+     * 病害照片题注：表格构件名 + 部位 + 表格缺损类型（裂缝用横向/纵向裂缝）。
+     */
+    public static String diseasePhotoCaption(Disease disease, String componentName) {
+        String name = componentName != null ? componentName : "";
+        String position = disease != null && disease.getPosition() != null ? disease.getPosition() : "";
+        String typeName = "";
+        if (disease != null) {
+            typeName = reportDiseaseTypeNameIfCrack(disease);
+            if (typeName == null) {
+                typeName = "";
+            } else if (typeName.contains("#")) {
+                typeName = typeName.substring(typeName.lastIndexOf("#") + 1);
+            }
+        }
+        return name + position + typeName;
+    }
+
+    /**
      * 表格默认小五（9 磅 = 18 half-points）。
      */
     public static final int TABLE_FONT_HALF_POINTS = 18;
@@ -927,6 +1200,90 @@ public class ReportGenerateTools {
             setMixedFontFamily(run, fontHalfPoints, chineseFont);
         }
         chunk.setLength(0);
+    }
+
+    /**
+     * 现状照题注。有备注就用备注；没有备注时用当前章节的直接子节点名称，
+     * 例如桥面系下的桥面铺装、伸缩缝装置、人行道。末尾统一加「现状」。
+     */
+    public static String statusPhotoCaption(FileMap fileMap, BiObject sectionNode, Map<Long, BiObject> nodeMap) {
+        String remark = stripStatusSuffix(fileMap == null ? null : fileMap.getAttachmentRemark());
+        String body = remark.isEmpty() ? statusSubsetName(fileMap, sectionNode, nodeMap) : remark;
+        if (body.isEmpty()) {
+            body = statusSubsetName(fileMap, sectionNode, nodeMap);
+        }
+        return body.endsWith("现状") ? body : body + "现状";
+    }
+
+    /** 给已有题注补上「现状」，并去掉末尾的「现状照片」。 */
+    public static String finishStatusCaption(String text) {
+        String body = stripStatusSuffix(text);
+        return body.endsWith("现状") ? body : body + "现状";
+    }
+
+    private static String statusSubsetName(FileMap fileMap, BiObject sectionNode, Map<Long, BiObject> nodeMap) {
+        BiObject captionNode = statusPhotoCaptionNode(
+                fileMap != null ? fileMap.getSubjectId() : null, sectionNode, nodeMap);
+        if (captionNode != null && StringUtils.isNotEmpty(captionNode.getName())) {
+            return captionNode.getName().trim();
+        }
+        return sectionNode != null && sectionNode.getName() != null ? sectionNode.getName().trim() : "";
+    }
+
+    /** 去掉备注末尾已经写过的「现状」或「现状照片」，避免再拼一次。 */
+    static String stripStatusSuffix(String text) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.trim();
+        if (trimmed.endsWith("现状照片")) {
+            return trimmed.substring(0, trimmed.length() - "现状照片".length()).trim();
+        }
+        if (trimmed.endsWith("现状")) {
+            return trimmed.substring(0, trimmed.length() - "现状".length()).trim();
+        }
+        return trimmed;
+    }
+
+    public static int statusPhotoCaptionOrder(FileMap fileMap, BiObject sectionNode, Map<Long, BiObject> nodeMap) {
+        BiObject captionNode = statusPhotoCaptionNode(
+                fileMap != null ? fileMap.getSubjectId() : null, sectionNode, nodeMap);
+        if (captionNode == null) {
+            return Integer.MAX_VALUE;
+        }
+        if (sectionNode != null && sectionNode.getId() != null && sectionNode.getId().equals(captionNode.getId())) {
+            return -1;
+        }
+        return captionNode.getOrderNum() != null ? captionNode.getOrderNum() : Integer.MAX_VALUE;
+    }
+
+    /** 从照片挂接节点向上走到当前章节的直接子节点，例如桥面系 → 排水系统。 */
+    static BiObject statusPhotoCaptionNode(Long subjectId, BiObject sectionNode, Map<Long, BiObject> nodeMap) {
+        if (sectionNode == null) {
+            return null;
+        }
+        if (subjectId == null || nodeMap == null || nodeMap.isEmpty()) {
+            return sectionNode;
+        }
+        BiObject current = nodeMap.get(subjectId);
+        if (current == null) {
+            return sectionNode;
+        }
+        Long sectionId = sectionNode.getId();
+        if (sectionId != null && sectionId.equals(current.getId())) {
+            return sectionNode;
+        }
+        int guard = 0;
+        while (current != null && current.getParentId() != null && guard++ < 32) {
+            if (sectionId != null && sectionId.equals(current.getParentId())) {
+                return current;
+            }
+            current = nodeMap.get(current.getParentId());
+            if (current != null && sectionId != null && sectionId.equals(current.getId())) {
+                return sectionNode;
+            }
+        }
+        return current != null ? current : sectionNode;
     }
 
     /**

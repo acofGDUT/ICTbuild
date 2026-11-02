@@ -2,6 +2,7 @@ package edu.whut.cs.bi.biz.service;
 
 
 import edu.whut.cs.bi.biz.domain.Disease;
+import edu.whut.cs.bi.biz.domain.Task;
 import edu.whut.cs.bi.biz.domain.dto.CauseQuery;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -40,11 +41,12 @@ public interface IDiseaseService {
 
     /**
      * 批量查询纯Excel导出需要的病害、构件和图片URL。
+     * 按各任务的项目+桥梁查询，与病害页单桥导出一致，不依赖可能错乱的 task_id。
      *
-     * @param taskIds 任务ID列表
-     * @return 按任务顺序、病害创建时间倒序排列的病害集合
+     * @param tasks 已选任务（需含 id、projectId、buildingId）
+     * @return 病害集合
      */
-    List<Disease> selectDiseaseListForExcel(List<Long> taskIds);
+    List<Disease> selectDiseaseListForExcel(List<Task> tasks);
 
     /**
      * 查询病害列表

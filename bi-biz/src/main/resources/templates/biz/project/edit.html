@@ -64,7 +64,7 @@
                     <div class="col-sm-8">
                         <div class="input-group">
                             <input name="deptName" onclick="selectDeptTree()" id="treeName" type="text"
-                                   placeholder="请选择承担单位" class="form-control" th:field="*{dept.deptName}"
+                                   placeholder="请选择承担单位" class="form-control" th:value="*{dept?.deptName}"
                                    required>
                             <span class="input-group-addon"><i class="fa fa-search"></i></span>
                         </div>
@@ -79,7 +79,7 @@
                     <div class="col-sm-8">
                         <div class="input-group">
                             <input name="ownerDeptName" onclick="selectOwnerDeptTree()" id="ownerTreeName" type="text"
-                                   placeholder="请选择所属单位" class="form-control" th:field="*{ownerDept.deptName}"
+                                   placeholder="请选择所属单位" class="form-control" th:value="*{ownerDept?.deptName}"
                                    required>
                             <span class="input-group-addon"><i class="fa fa-search"></i></span>
                         </div>

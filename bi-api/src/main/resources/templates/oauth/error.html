@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>授权失败</title>
+    <link th:href="@{/css/bootstrap.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/login.min.css}" rel="stylesheet"/>
+    <style type="text/css">
+        .oauth-panel { max-width: 420px; margin: 10% auto 0; background: rgba(255,255,255,.96); border-radius: 6px; padding: 28px 32px; color: #333; }
+    </style>
+</head>
+<body class="signin">
+<div class="oauth-panel">
+    <h3>无法完成授权</h3>
+    <p th:text="${message}">授权请求无效。</p>
+    <p class="text-muted">可以关闭此页面，回到 AI 客户端重新连接 MCP。</p>
+</div>
+</body>
+</html>

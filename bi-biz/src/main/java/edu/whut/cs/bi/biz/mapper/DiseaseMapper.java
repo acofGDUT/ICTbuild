@@ -1,6 +1,7 @@
 package edu.whut.cs.bi.biz.mapper;
 
 import edu.whut.cs.bi.biz.domain.Disease;
+import edu.whut.cs.bi.biz.domain.Task;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -38,6 +39,15 @@ public interface DiseaseMapper {
      * @return 病害集合
      */
     List<Disease> selectDiseaseListByTaskIds(@Param("taskIds") List<Long> taskIds);
+
+    /**
+     * 按任务的项目+桥梁批量查询病害。
+     * 部分历史病害 task_id 错乱或为空，与病害页单桥导出一致，不以 task_id 过滤。
+     *
+     * @param tasks 已选任务（需含 projectId、buildingId）
+     * @return 病害集合
+     */
+    List<Disease> selectDiseaseListByProjectBuildings(@Param("tasks") List<Task> tasks);
 
     /**
      * 新增病害

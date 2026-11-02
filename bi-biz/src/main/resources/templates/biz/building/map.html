@@ -2,9 +2,6 @@
 <html lang="zh" xmlns:th="http://www.thymeleaf.org">
 <head>
     <th:block th:include="include :: header('桥梁地图')"/>
-    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/leaflet.css}"/>
-    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/MarkerCluster.css}"/>
-    <link rel="stylesheet" th:href="@{/ajax/libs/leaflet/MarkerCluster.Default.css}"/>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; background: #e7eef5; }
         .map-shell { display: flex; height: 100vh; min-height: 560px; }
@@ -14,12 +11,33 @@
         }
         .map-side header { padding: 18px 18px 12px; }
         .map-side h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: 0.04em; }
-        .map-count { margin-top: 8px; color: #9fb3c8; font-size: 13px; line-height: 1.6; }
-        .map-count b { color: #fff; font-size: 22px; font-weight: 650; margin-right: 4px; }
+        .map-count { margin-top: 8px; color: #9fb3c8; font-size: 13px; line-height: 1.5; }
+        .map-count-nums { color: #fff; font-size: 22px; font-weight: 650; letter-spacing: 0.02em; }
+        .map-count-nums span { color: #9fb3c8; margin: 0 6px; font-weight: 500; }
+        .map-count-label { margin-top: 2px; }
+        .amap-info { z-index: 300 !important; pointer-events: auto !important; }
+        .amap-info-content, .amap-info-outer, .bridge-popup { pointer-events: auto; }
+        .bridge-popup-links { margin-top: 8px; }
+        .bridge-popup-links a {
+            display: inline-block; margin: 0 8px 0 0; padding: 2px 8px;
+            color: #1a6fe8; background: #e8f1ff; border-radius: 4px;
+            cursor: pointer; pointer-events: auto; text-decoration: none;
+        }
         .map-tools { padding: 0 18px 12px; }
         .map-tools input, .map-tools select {
             width: 100%; height: 36px; border: 0; border-radius: 6px;
             padding: 0 12px; margin-bottom: 8px; background: #1c3b58; color: #fff;
+        }
+        .grade-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+        .grade-filter label {
+            display: inline-flex; align-items: center; gap: 5px; margin: 0;
+            background: #1c3b58; color: #e8eef5; border-radius: 6px;
+            padding: 5px 8px; font-size: 12px; font-weight: 500; cursor: pointer;
+        }
+        .grade-filter label.off { opacity: 0.4; }
+        .grade-filter input { margin: 0; accent-color: #2f7cf6; }
+        .grade-filter i {
+            width: 8px; height: 8px; border-radius: 50%; flex: none;
         }
         .map-tools input::placeholder { color: #8aa0b5; }
         .bridge-list { flex: 1; overflow: auto; padding: 0 8px 12px; }
@@ -30,24 +48,68 @@
         .bridge-item:hover, .bridge-item.active { background: #1c4d78; color: #fff; }
         .bridge-item small { display: block; color: #8aa0b5; margin-top: 2px; }
         .map-stage { flex: 1; position: relative; min-width: 0; }
-        #bridgeMap { position: absolute; inset: 0; }
-        .leaflet-div-icon.bridge-icon { background: transparent; border: none; }
+        #bridgeMap { position: absolute; inset: 0; background: #e7eef5; }
         .bridge-popup { min-width: 180px; line-height: 1.7; color: #1d2a36; }
         .bridge-popup b { font-size: 15px; }
+        .bridge-cluster {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: #2458a6; color: #fff; border: 2px solid #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 650; cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0,0,0,.25);
+        }
+        .amap-marker-label {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
+        .bridge-pin-name {
+            color: #1a6fe8;
+            font-size: 14px;
+            font-weight: 650;
+            line-height: 1.2;
+            white-space: nowrap;
+            text-shadow: 0 0 2px #fff, 0 0 2px #fff, 1px 0 #fff, -1px 0 #fff;
+        }
         .map-legend {
             position: absolute; top: 12px; right: 12px; z-index: 500;
             background: rgba(255,255,255,.94); border-radius: 8px; padding: 10px 12px;
             font-size: 12px; color: #243140; line-height: 1.9;
         }
+        .map-legend div { cursor: pointer; }
+        .map-legend div.off { opacity: 0.35; }
         .map-legend i {
             display: inline-block; width: 12px; height: 12px; border-radius: 3px;
             margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.12);
         }
         .map-note {
-            position: absolute; left: 12px; bottom: 12px; z-index: 500;
+            position: absolute; left: 12px; bottom: 36px; z-index: 500;
             background: rgba(255,255,255,.92); color: #334; border-radius: 6px;
             padding: 6px 10px; font-size: 12px;
         }
+        .map-stats {
+            position: absolute; right: 12px; bottom: 28px; z-index: 500;
+            width: 292px; background: #10283f; color: #e8eef5;
+            border-radius: 10px; padding: 12px 14px 10px;
+            box-shadow: 0 8px 24px rgba(16, 40, 63, .28);
+        }
+        .map-stats-title { font-size: 14px; font-weight: 650; margin-bottom: 8px; }
+        .map-stats-body { display: flex; align-items: center; gap: 12px; }
+        .map-donut { position: relative; width: 92px; height: 92px; flex: none; }
+        .map-donut svg { width: 100%; height: 100%; display: block; }
+        .map-donut-total {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; line-height: 1.15;
+        }
+        .map-donut-total b { font-size: 18px; font-weight: 650; }
+        .map-donut-total span { font-size: 11px; color: #9fb3c8; }
+        .map-stats-list { flex: 1; min-width: 0; }
+        .map-stats-row { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.75; }
+        .map-stats-row i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+        .map-stats-row span { flex: 1; }
+        .map-stats-row b { font-weight: 650; }
+        .map-stats-row em { font-style: normal; color: #9fb3c8; width: 48px; text-align: right; }
     </style>
 </head>
 <body>
@@ -64,44 +126,47 @@
                 <option value="0">只看组合桥</option>
                 <option value="1">只看桥幅</option>
             </select>
-            <select id="bridgeGrade">
-                <option value="">全部技术状况</option>
-                <option value="1">1类</option>
-                <option value="2">2类</option>
-                <option value="3">3类</option>
-                <option value="4">4类及以下</option>
-                <option value="none">未评定</option>
-            </select>
+            <div class="grade-filter" id="gradeFilter">
+                <label><input type="checkbox" value="1" checked><i style="background:#2e9e4f"></i>1类</label>
+                <label><input type="checkbox" value="2" checked><i style="background:#e0b000"></i>2类</label>
+                <label><input type="checkbox" value="3" checked><i style="background:#f08a24"></i>3类</label>
+                <label><input type="checkbox" value="4" checked><i style="background:#e23d3d"></i>4类及以下</label>
+                <label><input type="checkbox" value="none" checked><i style="background:#8b95a1"></i>未评定</label>
+            </div>
         </div>
         <div class="bridge-list" id="bridgeList"></div>
     </aside>
     <div class="map-stage">
         <div id="bridgeMap"></div>
         <div class="map-legend">
-            <div><i style="background:#2e9e4f"></i>1类</div>
-            <div><i style="background:#e0b000"></i>2类</div>
-            <div><i style="background:#f08a24"></i>3类</div>
-            <div><i style="background:#e23d3d"></i>4类及以下</div>
-            <div><i style="background:#8b95a1"></i>未评定</div>
+            <div data-grade="1"><i style="background:#2e9e4f"></i>1类</div>
+            <div data-grade="2"><i style="background:#e0b000"></i>2类</div>
+            <div data-grade="3"><i style="background:#f08a24"></i>3类</div>
+            <div data-grade="4"><i style="background:#e23d3d"></i>4类及以下</div>
+            <div data-grade="none"><i style="background:#8b95a1"></i>未评定</div>
         </div>
-        <div class="map-note">颜色是最新一次全桥技术状况等级。坐标来自桥梁卡片 GPS。</div>
+        <div class="map-note">点数字圆点会放大。放大后，同一坐标的左右幅会分成两根桥标。</div>
+        <div class="map-stats">
+            <div class="map-stats-title">技术状况</div>
+            <div class="map-stats-body">
+                <div class="map-donut">
+                    <svg viewBox="0 0 36 36" id="gradeDonut"></svg>
+                    <div class="map-donut-total"><b id="gradeTotal">0</b><span>座</span></div>
+                </div>
+                <div class="map-stats-list" id="gradeList"></div>
+            </div>
+        </div>
     </div>
 </div>
 <th:block th:include="include :: footer"/>
-<script th:src="@{/ajax/libs/leaflet/leaflet.js}"></script>
-<script th:src="@{/ajax/libs/leaflet/leaflet.markercluster.js}"></script>
+<script src="https://webapi.amap.com/loader.js"></script>
 <script th:inline="javascript">
+    var amapKey = /*[[${amapKey}]]*/ "";
+    var amapSecurityJsCode = /*[[${amapSecurityJsCode}]]*/ "";
     var points = [];
-    var markers = {};
-    var map = L.map("bridgeMap", { zoomControl: true });
-    L.tileLayer("https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}", {
-        subdomains: "1234",
-        maxZoom: 18,
-        attribution: "高德地图"
-    }).addTo(map);
-    map.setView([30.6, 111.3], 7);
-    var cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48 });
-    map.addLayer(cluster);
+    var map = null;
+    var cluster = null;
+    var infoWindow = null;
 
     function kindLabel(isLeaf) {
         return isLeaf === "0" ? "组合桥" : "桥幅";
@@ -136,25 +201,23 @@
         return isNaN(n) ? "—" : n.toFixed(1);
     }
 
-    function bridgeIcon(level) {
-        var color = gradeColor(level);
-        var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>"
-            + "<path fill='" + color + "' stroke='#fff' stroke-width='1.6' stroke-linejoin='round' "
-            + "d='M4 18.5h20v2.4H4z M6 18.5V12h2.6v6.5 M19.4 18.5V12H22v6.5'/>"
-            + "<path fill='none' stroke='" + color + "' stroke-width='2.4' stroke-linecap='round' "
-            + "d='M8.6 18.2c1.8-5.4 9-5.4 10.8 0'/>"
-            + "</svg>";
-        return L.divIcon({
-            className: "bridge-icon",
-            html: svg,
-            iconSize: [28, 28],
-            iconAnchor: [14, 22],
-            popupAnchor: [0, -18]
-        });
+    function bridgePinHtml(level) {
+        return "<div style='width:34px;height:44px;line-height:0'>"
+            + "<svg xmlns='http://www.w3.org/2000/svg' width='34' height='44' viewBox='0 0 34 44'>"
+            + "<path fill='" + gradeColor(level) + "' stroke='#fff' stroke-width='1.6' stroke-linejoin='round' "
+            + "d='M17 42 C17 42 3 27 3 16.2 C3 8.2 9.3 2.2 17 2.2 C24.7 2.2 31 8.2 31 16.2 C31 27 17 42 17 42 Z'/>"
+            + "<path fill='none' stroke='#fff' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' "
+            + "d='M10.2 19.2 h13.6 M12.4 19.2 v-4.2 M21.6 19.2 v-4.2 M12.4 15 Q17 9.6 21.6 15'/>"
+            + "</svg></div>";
+    }
+
+    function pinNameHtml(point) {
+        return "<span class='bridge-pin-name' style='color:" + gradeColor(point.systemLevel) + "'>"
+            + escapeHtml(point.name) + "</span>";
     }
 
     function popupHtml(point) {
-        var lines = "<div class='bridge-popup'><b>" + escapeHtml(point.name) + "</b><br>"
+        var lines = "<b>" + escapeHtml(point.name) + "</b><br>"
             + kindLabel(point.isLeaf) + "<br>技术状况：" + levelText(point.systemLevel);
         if (gradeBucket(point.systemLevel) !== "none") {
             lines += "<br>全桥得分：" + scoreText(point.systemScore)
@@ -162,41 +225,406 @@
                 + "<br>下部结构：" + levelText(point.substructureLevel)
                 + "<br>桥面系：" + levelText(point.deckSystemLevel);
         }
-        return lines + "</div>";
+        var links = "";
+        var click = " onmousedown='event.stopPropagation()' onclick='return window.openBridgePopup(event, this)'";
+        if (point.taskId) {
+            links += "<a href='" + ctx + "biz/task/inspect/" + point.taskId + "' data-title='病害'" + click + ">病害</a>";
+        }
+        if (point.evaluationTaskId) {
+            links += "<a href='" + ctx + "biz/bievaluation/detail/" + point.evaluationTaskId
+                + "?buildingName=" + encodeURIComponent(point.name || "") + "' data-title='评定详情'" + click + ">评定详情</a>";
+        }
+        if (links) lines += "<div class='bridge-popup-links' onmousedown='event.stopPropagation()'>" + links + "</div>";
+        return lines;
+    }
+
+    window.openBridgePopup = function (event, link) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        openPopupLink(link.getAttribute("data-title") || "详情", link.getAttribute("href"));
+        return false;
+    };
+
+    var popupClickLock = false;
+    function openPopupLink(title, url) {
+        if (popupClickLock) return;
+        popupClickLock = true;
+        setTimeout(function () { popupClickLock = false; }, 400);
+        openBizTab(title, url);
+    }
+
+    function popupNode(point) {
+        var wrap = document.createElement("div");
+        wrap.className = "bridge-popup";
+        wrap.innerHTML = popupHtml(point);
+        wrap.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
+        return wrap;
+    }
+
+    function openBizTab(title, url) {
+        var topWin = window.top || window;
+        try {
+            if (topWin.$ && topWin.$.modal && topWin.$.modal.openTab) {
+                topWin.$.modal.openTab(title, url);
+                return;
+            }
+        } catch (e) {}
+        window.location.href = url;
+    }
+
+    function pointData(context) {
+        var data = context && context.data;
+        if (Array.isArray(data)) return data[0] || {};
+        return data || {};
+    }
+
+    function armLivePopup() {
+        var roots = document.querySelectorAll(".amap-info-content, .bridge-popup");
+        for (var i = 0; i < roots.length; i++) {
+            var root = roots[i];
+            if (root.getAttribute("data-armed") === "1") continue;
+            root.setAttribute("data-armed", "1");
+        root.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
+        root.addEventListener("mouseup", function (ev) { ev.stopPropagation(); });
+        root.addEventListener("touchstart", function (ev) { ev.stopPropagation(); });
+        root.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            var link = ev.target.closest ? ev.target.closest("a") : null;
+            if (!link) return;
+            ev.preventDefault();
+            openPopupLink(link.getAttribute("data-title") || "详情", link.getAttribute("href"));
+        });
+        }
+    }
+
+    function openPoint(point, position) {
+        if (!point || !infoWindow) return;
+        highlight(point.id);
+        infoWindow.setContent(popupNode(point));
+        infoWindow.open(map, position);
+        setTimeout(armLivePopup, 0);
+    }
+
+    function readLngLat(value) {
+        if (!value) return null;
+        if (Array.isArray(value)) return [Number(value[0]), Number(value[1])];
+        if (typeof value.getLng === "function") return [value.getLng(), value.getLat()];
+        if (value.lng != null && value.lat != null) return [Number(value.lng), Number(value.lat)];
+        return null;
+    }
+
+    function collectPositions(items, out) {
+        if (!items) return;
+        var list = Array.isArray(items) ? items : [items];
+        list.forEach(function (item) {
+            if (!item) return;
+            var origin = item._amapMarker && item._amapMarker.originData;
+            if (Array.isArray(origin) && origin.length) {
+                origin.forEach(function (group) { collectPositions(group, out); });
+                return;
+            }
+            var position = readLngLat(item.lnglat);
+            if (position && !isNaN(position[0]) && !isNaN(position[1])) out.push(position);
+        });
+    }
+
+    var spider = null;
+    var zoomLock = false;
+    var suppressMapClick = false;
+
+    function collapseSpider() {
+        if (!spider) return;
+        spider.markers.forEach(function (marker) { marker.setMap(null); });
+        spider.lines.forEach(function (line) { line.setMap(null); });
+        spider = null;
+    }
+
+    function offsetByPixel(lnglat, dx, dy) {
+        var pixel = map.lngLatToContainer(lnglat);
+        var x = typeof pixel.getX === "function" ? pixel.getX() : pixel.x;
+        var y = typeof pixel.getY === "function" ? pixel.getY() : pixel.y;
+        var moved = map.containerToLngLat(new AMap.Pixel(x + dx, y + dy));
+        return [moved.getLng(), moved.getLat()];
+    }
+
+    function inView(lng, lat) {
+        var bounds = map.getBounds();
+        if (!bounds) return true;
+        var sw = bounds.getSouthWest();
+        var ne = bounds.getNorthEast();
+        return lng >= sw.getLng() && lng <= ne.getLng() && lat >= sw.getLat() && lat <= ne.getLat();
+    }
+
+    function coincidentGroups() {
+        var groups = {};
+        selected().forEach(function (point) {
+            var lng = Number(point.longitude);
+            var lat = Number(point.latitude);
+            if (!inView(lng, lat)) return;
+            var key = lng.toFixed(5) + "," + lat.toFixed(5);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(point);
+        });
+        var result = [];
+        Object.keys(groups).forEach(function (key) {
+            if (groups[key].length >= 2) result.push(groups[key]);
+        });
+        return result;
+    }
+
+    function groupKey(groups) {
+        var ids = [];
+        groups.forEach(function (group) {
+            group.forEach(function (point) { ids.push(String(point.id)); });
+        });
+        ids.sort();
+        return ids.join(",");
+    }
+
+    function layoutSpiders(groups) {
+        collapseSpider();
+        spider = { ids: {}, positions: {}, markers: [], lines: [], zoom: map.getZoom(), key: groupKey(groups) };
+        var placed = [];
+        groups.forEach(function (group) {
+            var lngs = group.map(function (point) { return Number(point.longitude); });
+            var lats = group.map(function (point) { return Number(point.latitude); });
+            var midLng = (Math.min.apply(null, lngs) + Math.max.apply(null, lngs)) / 2;
+            var midLat = (Math.min.apply(null, lats) + Math.max.apply(null, lats)) / 2;
+            var center = [midLng, midLat];
+            group.forEach(function (point, index) {
+                var angle = Math.PI * 2 * index / group.length - Math.PI / 2;
+                var pos = offsetByPixel(center, Math.cos(angle) * 58, Math.sin(angle) * 58);
+                spider.ids[String(point.id)] = true;
+                spider.positions[String(point.id)] = pos;
+                placed.push({ point: point, pos: pos, center: center });
+            });
+        });
+        render(false);
+        placed.forEach(function (item) {
+            var line = new AMap.Polyline({
+                path: [item.center, item.pos],
+                strokeColor: "#8aa4c8",
+                strokeWeight: 1.5,
+                map: map
+            });
+            var marker = new AMap.Marker({
+                position: item.pos,
+                content: bridgePinHtml(item.point.systemLevel),
+                anchor: "bottom-center",
+                title: item.point.name || "",
+                zIndex: 220,
+                map: map,
+                label: {
+                    direction: "right",
+                    offset: new AMap.Pixel(2, 0),
+                    content: pinNameHtml(item.point)
+                }
+            });
+            marker.on("click", function () {
+                suppressMapClick = true;
+                openPoint(item.point, item.pos);
+            });
+            spider.markers.push(marker);
+            spider.lines.push(line);
+        });
+    }
+
+    function syncSpider() {
+        if (!map) return;
+        var zoom = map.getZoom() || 11;
+        if (zoom < 16) {
+            if (!spider) return;
+            collapseSpider();
+            render(false);
+            return;
+        }
+        var groups = coincidentGroups();
+        if (!groups.length) {
+            if (!spider) return;
+            collapseSpider();
+            render(false);
+            return;
+        }
+        var key = groupKey(groups);
+        if (spider && spider.zoom === zoom && spider.key === key) return;
+        layoutSpiders(groups);
+    }
+
+    function recordsInCluster(items) {
+        var found = [];
+        var seen = {};
+        function take(item) {
+            if (!item || typeof item !== "object") return;
+            if (Array.isArray(item)) {
+                item.forEach(take);
+                return;
+            }
+            if (item.id != null) {
+                var id = String(item.id);
+                if (seen[id]) return;
+                seen[id] = true;
+                var full = points.filter(function (point) { return String(point.id) === id; })[0];
+                if (full) found.push(full);
+                return;
+            }
+            var origin = item._amapMarker && item._amapMarker.originData;
+            if (Array.isArray(origin)) {
+                origin.forEach(function (group) {
+                    if (Array.isArray(group)) group.forEach(take);
+                    else take(group);
+                });
+            }
+        }
+        (items || []).forEach(take);
+        return found;
+    }
+
+    function openCluster(items, position) {
+        if (zoomLock) return;
+        zoomLock = true;
+        setTimeout(function () { zoomLock = false; }, 400);
+        var matched = recordsInCluster(items);
+        var center = readLngLat(position);
+        if (matched.length < 2) {
+            if (center) map.setZoomAndCenter(Math.min((map.getZoom() || 11) + 2, 17), center);
+            return;
+        }
+        var lngs = matched.map(function (point) { return Number(point.longitude); });
+        var lats = matched.map(function (point) { return Number(point.latitude); });
+        var minLng = Math.min.apply(null, lngs);
+        var maxLng = Math.max.apply(null, lngs);
+        var minLat = Math.min.apply(null, lats);
+        var maxLat = Math.max.apply(null, lats);
+        var span = Math.max(maxLng - minLng, maxLat - minLat);
+        var midLng = (minLng + maxLng) / 2;
+        var midLat = (minLat + maxLat) / 2;
+        if (span <= 0.0008) {
+            var here = map.getZoom() || 11;
+            if (here < 17) {
+                map.setZoomAndCenter(17, [midLng, midLat]);
+                return;
+            }
+            syncSpider();
+            return;
+        }
+        collapseSpider();
+        render(false);
+        var current = map.getZoom() || 11;
+        var next = Math.log(360 / Math.max(span, 0.00001)) / Math.LN2;
+        map.setZoomAndCenter(Math.min(Math.max(current + 1, Math.floor(next)), 17), [midLng, midLat]);
+    }
+
+    function selectedGrades() {
+        var values = [];
+        $("#gradeFilter input:checked").each(function () { values.push(this.value); });
+        return values;
+    }
+
+    function paintGradeFilter() {
+        $("#gradeFilter input").each(function () {
+            var on = this.checked;
+            $(this).closest("label").toggleClass("off", !on);
+            $(".map-legend [data-grade='" + this.value + "']").toggleClass("off", !on);
+        });
     }
 
     function selected() {
         var keyword = $("#bridgeKeyword").val().trim();
         var kind = $("#bridgeKind").val();
-        var grade = $("#bridgeGrade").val();
+        var grades = selectedGrades();
         return points.filter(function (point) {
             if (kind && point.isLeaf !== kind) return false;
-            if (grade && gradeBucket(point.systemLevel) !== grade) return false;
+            if (grades.indexOf(gradeBucket(point.systemLevel)) < 0) return false;
             if (keyword && (point.name || "").indexOf(keyword) < 0) return false;
             return true;
         });
     }
 
+    function clusterData(list) {
+        return list.filter(function (point) {
+            return !spider || !spider.ids[String(point.id)];
+        }).map(function (point) {
+            return {
+                lnglat: [Number(point.longitude), Number(point.latitude)],
+                id: point.id,
+                name: point.name,
+                isLeaf: point.isLeaf,
+                longitude: Number(point.longitude),
+                latitude: Number(point.latitude),
+                systemLevel: point.systemLevel,
+                systemScore: point.systemScore,
+                superstructureLevel: point.superstructureLevel,
+                substructureLevel: point.substructureLevel,
+                deckSystemLevel: point.deckSystemLevel,
+                taskId: point.taskId,
+                evaluationTaskId: point.evaluationTaskId
+            };
+        });
+    }
+
     function render(fit) {
         var shown = selected();
-        cluster.clearLayers();
-        markers = {};
-        var bounds = [];
-        shown.forEach(function (point) {
-            var marker = L.marker([point.latitude, point.longitude], {
-                icon: bridgeIcon(point.systemLevel),
-                title: point.name
-            });
-            marker.bindPopup(popupHtml(point));
-            marker.on("click", function () { highlight(point.id); });
-            markers[point.id] = marker;
-            cluster.addLayer(marker);
-            bounds.push([point.latitude, point.longitude]);
-        });
-        if (fit && bounds.length) {
-            map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
+        if (cluster) {
+            cluster.setData(clusterData(shown));
+        }
+        if (fit && map && shown.length === 1) {
+            map.setZoomAndCenter(12, [Number(shown[0].longitude), Number(shown[0].latitude)]);
+        } else if (fit && map && shown.length) {
+            var lngs = shown.map(function (point) { return Number(point.longitude); });
+            var lats = shown.map(function (point) { return Number(point.latitude); });
+            map.setBounds(new AMap.Bounds(
+                [Math.min.apply(null, lngs), Math.min.apply(null, lats)],
+                [Math.max.apply(null, lngs), Math.max.apply(null, lats)]
+            ));
         }
         renderList(shown);
+        renderStats(shown);
+    }
+
+    var gradeStats = [
+        ["1", "1类", "#2e9e4f"],
+        ["2", "2类", "#e0b000"],
+        ["3", "3类", "#f08a24"],
+        ["4", "4类及以下", "#e23d3d"],
+        ["none", "未评定", "#8b95a1"]
+    ];
+
+    function renderStats(shown) {
+        var counts = { "1": 0, "2": 0, "3": 0, "4": 0, "none": 0 };
+        shown.forEach(function (point) {
+            counts[gradeBucket(point.systemLevel)] += 1;
+        });
+        var total = shown.length;
+        $("#gradeTotal").text(total);
+        var svg = "";
+        var offset = 0;
+        gradeStats.forEach(function (item) {
+            var count = counts[item[0]];
+            if (!total || !count) return;
+            var pct = count / total * 100;
+            svg += "<circle cx='18' cy='18' r='15.915' fill='none' stroke='" + item[2]
+                + "' stroke-width='3.6' stroke-dasharray='" + pct.toFixed(3) + " " + (100 - pct).toFixed(3)
+                + "' stroke-dashoffset='" + (-offset).toFixed(3)
+                + "' transform='rotate(-90 18 18)'/>";
+            offset += pct;
+        });
+        if (!svg) {
+            svg = "<circle cx='18' cy='18' r='15.915' fill='none' stroke='#3d5166' stroke-width='3.6'/>";
+        }
+        $("#gradeDonut").html(svg);
+        var list = $("#gradeList").empty();
+        gradeStats.forEach(function (item) {
+            var count = counts[item[0]];
+            var pct = total ? (count / total * 100).toFixed(1) : "0.0";
+            var row = $("<div class='map-stats-row'></div>");
+            row.append($("<i></i>").css("background", item[2]));
+            row.append($("<span></span>").text(item[1]));
+            row.append($("<b></b>").text(count));
+            row.append($("<em></em>").text(pct + "%"));
+            list.append(row);
+        });
     }
 
     function renderList(shown) {
@@ -219,12 +647,24 @@
     }
 
     function focusPoint(id) {
-        var point = points.filter(function (item) { return item.id === id; })[0];
-        var marker = markers[id];
-        if (!point || !marker) return;
+        var point = points.filter(function (item) { return String(item.id) === String(id); })[0];
+        if (!point || !map) return;
+        var position = [Number(point.longitude), Number(point.latitude)];
         highlight(id);
-        map.setView([point.latitude, point.longitude], Math.max(map.getZoom(), 14));
-        cluster.zoomToShowLayer(marker, function () { marker.openPopup(); });
+        suppressMapClick = true;
+        var zoom = map.getZoom() || 11;
+        if (zoom < 17) {
+            map.setZoomAndCenter(17, position);
+            map.once("zoomend", function () {
+                syncSpider();
+                var pos = spider && spider.positions[String(point.id)];
+                openPoint(point, pos || position);
+            });
+            return;
+        }
+        syncSpider();
+        var pos = spider && spider.positions[String(point.id)];
+        openPoint(point, pos || position);
     }
 
     function highlight(id) {
@@ -236,20 +676,116 @@
         return $("<div></div>").text(text || "").html();
     }
 
-    $("#bridgeKeyword, #bridgeKind, #bridgeGrade").on("input change", function () { render(false); });
+    function loadPoints() {
+        $.get(ctx + "biz/building/map/points", function (result) {
+            if (!result || result.code !== 0) {
+                $("#mapCount").text(result && result.msg ? result.msg : "坐标读取失败");
+                return;
+            }
+            var data = result.data || {};
+            points = data.points || [];
+            var summary = "<div class='map-count-nums'><b>" + (data.located || 0) + "</b><span>/</span><b>"
+                + (data.total || 0) + "</b></div><div class='map-count-label'>已定位 / 在册</div>";
+            if (!amapKey || !amapSecurityJsCode) {
+                summary += "<div class='map-count-label'>未配置高德 JS API 的 Key 或安全密钥，地图未加载</div>";
+            }
+            $("#mapCount").html(summary);
+            render(false);
+        }).fail(function () {
+            $("#mapCount").text("坐标读取失败");
+        });
+    }
 
-    $.get(ctx + "biz/building/map/points", function (result) {
-        if (!result || result.code !== 0) {
-            $("#mapCount").text(result && result.msg ? result.msg : "坐标读取失败");
-            return;
-        }
-        var data = result.data || {};
-        points = data.points || [];
-        $("#mapCount").html("<b>" + (data.located || 0) + "</b>座已标注<br>桥梁共 " + (data.total || 0) + " 座，其余卡片里没有有效 GPS");
-        render(true);
-    }).fail(function () {
-        $("#mapCount").text("坐标读取失败");
+    function applyFilter() {
+        paintGradeFilter();
+        collapseSpider();
+        render(false);
+        syncSpider();
+    }
+
+    $("#bridgeKeyword, #bridgeKind").on("input change", applyFilter);
+    $("#gradeFilter").on("change", "input", applyFilter);
+    $(".map-legend").on("click", "[data-grade]", function () {
+        var value = String($(this).attr("data-grade"));
+        var box = $("#gradeFilter input[value='" + value + "']");
+        box.prop("checked", !box.prop("checked"));
+        applyFilter();
     });
+
+    loadPoints();
+
+    if (amapKey && amapSecurityJsCode) {
+        window._AMapSecurityConfig = { securityJsCode: amapSecurityJsCode };
+        AMapLoader.load({
+            key: amapKey,
+            version: "2.0",
+            plugins: ["AMap.Scale", "AMap.MarkerCluster"]
+        }).then(function (AMap) {
+            AMap.getConfig().appname = "amap-jsapi-skill";
+            map = new AMap.Map("bridgeMap", {
+                viewMode: "2D",
+                zoom: 11,
+                center: [114.30, 30.59],
+                mapStyle: "amap://styles/normal",
+                features: ["bg", "road"],
+                showLabel: false,
+                isHotspot: false,
+                showBuildingBlock: false,
+                showIndoorMap: false
+            });
+            map.setFeatures(["bg", "road"]);
+            map.addControl(new AMap.Scale({ position: "LB" }));
+            infoWindow = new AMap.InfoWindow({
+                offset: new AMap.Pixel(0, -42),
+                anchor: "bottom-center",
+                autoMove: true,
+                closeWhenClickMap: true
+            });
+            map.on("zoomend", syncSpider);
+            map.on("moveend", syncSpider);
+            cluster = new AMap.MarkerCluster(map, [], {
+                gridSize: 48,
+                maxZoom: 16,
+                renderClusterMarker: function (context) {
+                    var div = document.createElement("div");
+                    div.className = "bridge-cluster";
+                    div.textContent = context.count;
+                    var marker = context.marker;
+                    marker.setContent(div);
+                    marker.setAnchor("center");
+                },
+                renderMarker: function (context) {
+                    var point = pointData(context);
+                    var marker = context.marker;
+                    marker.setContent(bridgePinHtml(point.systemLevel));
+                    marker.setAnchor("bottom-center");
+                    marker.setTitle(point.name || "");
+                    marker.setLabel({
+                        direction: "right",
+                        offset: new AMap.Pixel(2, 0),
+                        content: pinNameHtml(point)
+                    });
+                    marker.setExtData(point);
+                    if (marker.clearEvents) marker.clearEvents("click");
+                    marker.on("click", function () {
+                        suppressMapClick = true;
+                        openPoint(marker.getExtData() || point, marker.getPosition());
+                    });
+                }
+            });
+            cluster.on("click", function (event) {
+                suppressMapClick = true;
+                openCluster(event.clusterData, event.lnglat);
+            });
+            window.addEventListener("beforeunload", function () {
+                if (map) map.destroy();
+            });
+            if (points.length) render(false);
+        }).catch(function (error) {
+            $("#mapCount").text("高德地图加载失败");
+            console.error(error);
+        });
+    }
 </script>
 </body>
 </html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>连接 AI 客户端</title>
+    <link th:href="@{/css/bootstrap.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/font-awesome.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/style.min.css}" rel="stylesheet"/>
+    <link th:href="@{/css/login.min.css}" rel="stylesheet"/>
+    <link rel="shortcut icon" th:href="@{/favicon.ico}"/>
+    <style type="text/css">
+        .oauth-panel { max-width: 440px; margin: 7% auto 0; background: rgba(255,255,255,.96); border-radius: 6px; padding: 28px 32px; color: #333; }
+        .oauth-panel h3 { margin-top: 0; font-weight: 600; }
+        .oauth-client { background: #f3f6fa; border-radius: 4px; padding: 10px 12px; margin: 14px 0; font-size: 13px; line-height: 1.8; }
+        .oauth-panel .form-control { margin-bottom: 12px; }
+        .oauth-panel label { font-weight: normal; color: #666; margin-bottom: 4px; }
+        .oauth-error { color: #ed5565; margin-bottom: 10px; }
+        .imgcode { cursor: pointer; height: 34px; }
+    </style>
+</head>
+<body class="signin">
+<div class="oauth-panel">
+    <h3>连接 AI 客户端</h3>
+    <div class="oauth-client">
+        <div>登录后生成一个访问令牌和对应的配置，复制到 AI 客户端即可连接桥梁检测系统。</div>
+        <div>权限范围：查询桥梁、病害与评定数据；可创建单桥检测报告、填写重点关注病害、补算未评定（写操作）。操作权限与你在网页端的项目权限一致，写操作仍受你在网页端的角色权限限制。</div>
+        <div>有效期：<span th:text="${tokenDays}">7</span> 天，到期后回到本页重新生成；可在“个人中心 → AI 授权管理”随时撤销。</div>
+    </div>
+    <div class="oauth-error" th:if="${error != null}" th:text="${error}">错误信息</div>
+    <form method="post" th:action="@{/oauth/connect}" autocomplete="off">
+        <label for="client">要连接的客户端</label>
+        <select id="client" name="client" class="form-control">
+            <option th:each="entry : ${clients}" th:value="${entry.key}" th:text="${entry.value}"
+                    th:selected="${entry.key == client}">码道 CodeArts</option>
+        </select>
+        <input type="text" name="username" class="form-control" placeholder="用户名" th:value="${username}" required autofocus/>
+        <input type="password" name="password" class="form-control" placeholder="密码" required/>
+        <div class="row" th:if="${captchaEnabled == true}">
+            <div class="col-xs-6">
+                <input type="text" name="validateCode" class="form-control" placeholder="验证码" maxlength="5" required/>
+            </div>
+            <div class="col-xs-6">
+                <img th:src="@{/captcha/captchaImage(type=${captchaType})}" class="imgcode" title="点击更换验证码"
+                     th:data-src="@{/captcha/captchaImage(type=${captchaType})}"
+                     onclick="this.src=this.getAttribute('data-src')+'&amp;s='+Math.random()"/>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-success btn-block">登录并生成令牌</button>
+    </form>
+</div>
+</body>
+</html>

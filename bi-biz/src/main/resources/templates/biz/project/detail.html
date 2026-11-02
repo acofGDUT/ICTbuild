@@ -65,7 +65,7 @@
                 <div class="form-group">
                     <label class="col-sm-4 control-label">承担单位：</label>
                     <div class="col-sm-8">
-                        <input class="form-control detail-view" type="text" th:value="*{dept.deptName}" readonly>
+                        <input class="form-control detail-view" type="text" th:value="*{dept?.deptName}" readonly>
                     </div>
                 </div>
             </div>
@@ -73,7 +73,7 @@
                 <div class="form-group">
                     <label class="col-sm-4 control-label">所属单位：</label>
                     <div class="col-sm-8">
-                        <input class="form-control detail-view" type="text" th:value="*{ownerDept.deptName}" readonly>
+                        <input class="form-control detail-view" type="text" th:value="*{ownerDept?.deptName}" readonly>
                     </div>
                 </div>
             </div>

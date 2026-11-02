@@ -38,6 +38,14 @@
         where id = #{id}
     </select>
 
+    <select id="selectBiEvaluationByTaskIds" resultMap="BiEvaluationResult">
+        <include refid="selectBiEvaluationVo"/>
+        where task_id in
+        <foreach collection="taskIds" item="taskId" open="(" separator="," close=")">
+            #{taskId}
+        </foreach>
+    </select>
+
     <select id="selectBiEvaluationList" parameterType="BiEvaluation" resultMap="BiEvaluationResult">
         <include refid="selectBiEvaluationVo"/>
         <where>

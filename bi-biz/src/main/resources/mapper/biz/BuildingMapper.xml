@@ -389,7 +389,9 @@
                ev.system_score as systemScore,
                ev.superstructure_level as superstructureLevel,
                ev.substructure_level as substructureLevel,
-               ev.deck_system_level as deckSystemLevel
+               ev.deck_system_level as deckSystemLevel,
+               ev.task_id as evaluationTaskId,
+               tk.task_id as taskId
         from (
                  select b.id,
                         b.name,
@@ -413,6 +415,7 @@
              ) gps
                  left join (
             select building_id,
+                   task_id,
                    system_level,
                    system_score,
                    superstructure_level,
@@ -420,6 +423,7 @@
                    deck_system_level
             from (
                      select t.building_id,
+                            e.task_id,
                             e.system_level,
                             e.system_score,
                             e.superstructure_level,
@@ -431,6 +435,17 @@
                  ) ranked
             where rn = 1
         ) ev on ev.building_id = gps.id
+                 left join (
+            select building_id, id as task_id
+            from (
+                     select building_id,
+                            id,
+                            row_number() over (partition by building_id order by update_time desc, id desc) as rn
+                     from bi_task
+                     where del_flag = '0'
+                 ) latest_task
+            where rn = 1
+        ) tk on tk.building_id = gps.id
         order by gps.name
     </select>
 </mapper>

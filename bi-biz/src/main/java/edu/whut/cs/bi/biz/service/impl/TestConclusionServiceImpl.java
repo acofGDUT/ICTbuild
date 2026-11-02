@@ -46,8 +46,16 @@ public class TestConclusionServiceImpl implements TestConclusionService {
     @Autowired
     private BiObjectMapper biObjectMapper;
 
-    // 使用静态变量避免循环依赖问题
-    private static Map<Long, String> diseaseSummaryCache = new HashMap<>();
+    /**
+     * 按生成线程隔离。报告走 reportTaskExecutor 并发时，
+     * 全局 HashMap 会把不同桥的外观小结串进主要病害/检测结论。
+     */
+    private static final ThreadLocal<Map<Long, String>> DISEASE_SUMMARY_CACHE =
+            ThreadLocal.withInitial(HashMap::new);
+
+    private static Map<Long, String> currentCache() {
+        return DISEASE_SUMMARY_CACHE.get();
+    }
 
     @Override
     public void handleTestConclusion(XWPFDocument document, XWPFParagraph targetParagraph,
@@ -308,7 +316,7 @@ public class TestConclusionServiceImpl implements TestConclusionService {
     private String getOrCreateDiseaseSummary(Long nodeId) {
         try {
             // 先从缓存查找（第三章处理时已经缓存了结果）
-            String cached = diseaseSummaryCache.get(nodeId);
+            String cached = currentCache().get(nodeId);
             if (cached != null) {
                 log.info("使用第三章缓存的病害汇总: nodeId={}", nodeId);
                 return cached;
@@ -363,20 +371,28 @@ public class TestConclusionServiceImpl implements TestConclusionService {
      * 缓存病害汇总数据（供外部调用，在第三章处理时缓存）
      */
     public void cacheDiseaseSummary(Long nodeId, String summary) {
-        diseaseSummaryCache.put(nodeId, summary);
+        if (nodeId == null) {
+            return;
+        }
+        currentCache().put(nodeId, summary);
         log.info("缓存节点{}的病害汇总: {}", nodeId, summary);
     }
 
     /**
-     * 清空病害汇总缓存
+     * 清空当前线程的病害汇总缓存
      */
     public void clearDiseaseSummaryCache() {
-        diseaseSummaryCache.clear();
+        currentCache().clear();
         log.info("清空病害汇总缓存");
     }
 
     @Override
+    public void removeDiseaseSummaryCache() {
+        DISEASE_SUMMARY_CACHE.remove();
+    }
+
+    @Override
     public Map<Long, String> getSummaryCache() {
-        return this.diseaseSummaryCache;
+        return new HashMap<>(currentCache());
     }
 }

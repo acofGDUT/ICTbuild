@@ -14,6 +14,7 @@ import edu.whut.cs.bi.biz.service.IBiObjectService;
 import edu.whut.cs.bi.biz.service.ReadFileService;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.ModelMap;
 import org.springframework.web.bind.annotation.*;
@@ -55,9 +56,17 @@ public class BuildingController extends BaseController {
     @Resource
     private ReadFileService readFileService;
 
+    @Value("${amap.jsapi.key:}")
+    private String amapJsapiKey;
+
+    @Value("${amap.jsapi.security-js-code:}")
+    private String amapSecurityJsCode;
+
     @RequiresPermissions("biz:building:view")
     @GetMapping("/map")
-    public String map() {
+    public String map(ModelMap mmap) {
+        mmap.put("amapKey", amapJsapiKey);
+        mmap.put("amapSecurityJsCode", amapSecurityJsCode);
         return prefix + "/map";
     }
 
